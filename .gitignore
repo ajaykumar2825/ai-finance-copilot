@@ -1,0 +1,143 @@
+# =============================================================================
+# Dependencies
+# =============================================================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+.python-version
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.whl
+pip-wheel-metadata/
+MANIFEST
+
+# Python tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
+.tox/
+.nox/
+
+# =============================================================================
+# Build & Output
+# =============================================================================
+build/
+out/
+*.tsbuildinfo
+.next/
+.nuxt/
+.output/
+
+# =============================================================================
+# Environment & Secrets
+# =============================================================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# =============================================================================
+# IDEs & Editors
+# =============================================================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+tags
+
+# Emacs
+\#*\#
+.#*
+*~
+.dir-locals.el
+
+# =============================================================================
+# OS & Miscellaneous
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.log
+logs/
+
+# =============================================================================
+# Testing & Coverage
+# =============================================================================
+coverage/
+junit/
+test-results/
+playwright-report/
+blob-report/
+
+# =============================================================================
+# Miscellaneous
+# =============================================================================
+*.pem
+*.key
+*.cert
+*.crt
+.env.*
