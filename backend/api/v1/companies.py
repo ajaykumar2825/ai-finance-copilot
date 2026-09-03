@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -8,8 +9,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
-
-from pydantic import BaseModel
 
 
 class CompanySearchResult(BaseModel):

@@ -173,10 +173,6 @@ class RAGRetriever:
         if len(candidates) <= k:
             return candidates
 
-        # Compute MMR scores
-        query_embedding = await self._embeddings.aembed_query(query)
-        query_norm = _norm(query_embedding)
-
         selected_indices: list[int] = [0]  # first result is always most similar
         selected_embeddings = [_parse_embedding(candidates[0])]
 

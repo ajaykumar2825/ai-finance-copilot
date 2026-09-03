@@ -354,7 +354,10 @@ async def list_transactions(
         )
         rows = result.fetchall()
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load transactions: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load transactions: {exc}",
+        )
 
     items = [
         Transaction(
@@ -374,7 +377,12 @@ async def list_transactions(
     return TransactionListResponse(items=items, total=total, page=page, pageSize=page_size)
 
 
-@router.post("/transactions", response_model=Transaction, status_code=status.HTTP_201_CREATED, summary="Record a transaction")
+@router.post(
+    "/transactions",
+    response_model=Transaction,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a transaction",
+)
 async def create_transaction(
     body: TransactionCreateRequest,
     request: Request,
@@ -423,7 +431,10 @@ async def create_transaction(
             },
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to record transaction: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to record transaction: {exc}",
+        )
 
     return Transaction(
         id=tx_id,

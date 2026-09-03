@@ -66,7 +66,10 @@ async def get_watchlist(
         )
         rows = result.fetchall()
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load watchlist: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load watchlist: {exc}",
+        )
 
     items: list[WatchlistItem] = []
     for row in rows:
@@ -105,7 +108,12 @@ async def get_watchlist(
     return items
 
 
-@router.post("", response_model=WatchlistItem, status_code=status.HTTP_201_CREATED, summary="Add a ticker to the watchlist")
+@router.post(
+    "",
+    response_model=WatchlistItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a ticker to the watchlist",
+)
 async def add_to_watchlist(
     body: WatchlistCreateRequest,
     request: Request,
@@ -137,7 +145,10 @@ async def add_to_watchlist(
             {"id": item_id, "uid": user_id, "ticker": ticker, "name": body.name, "notes": body.notes, "now": now},
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to add to watchlist: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add to watchlist: {exc}",
+        )
 
     return WatchlistItem(
         id=item_id,
