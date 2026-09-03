@@ -14,17 +14,20 @@ jobs:
   frontend:
     name: Frontend (Node 22)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate frontend lockfile for cache
+      - name: Debug repository tree
+        run: |
+          pwd
+          ls
+          ls frontend
+
+      - name: Validate frontend lockfile
         run: |
           if [ ! -f frontend/package-lock.json ]; then
-            echo "Missing frontend/package-lock.json. Run npm install locally and commit the lockfile."
+            echo "Missing frontend/package-lock.json"
             exit 1
           fi
 
@@ -36,12 +39,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
+        working-directory: frontend
         run: npm ci
 
       - name: Lint frontend
+        working-directory: frontend
         run: npm run lint
 
       - name: Build frontend
+        working-directory: frontend
         run: npm run build
 
   backend:
