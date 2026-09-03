@@ -21,6 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate frontend lockfile for cache
+        run: |
+          if [ ! -f frontend/package-lock.json ]; then
+            echo "Missing frontend/package-lock.json. Run npm install locally and commit the lockfile."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
