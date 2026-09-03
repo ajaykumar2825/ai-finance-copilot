@@ -56,7 +56,7 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
         enableSystem={false}
         disableTransitionOnChange
       >
-        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
       </ThemeProvider>
     </QueryProvider>
   );

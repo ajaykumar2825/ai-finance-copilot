@@ -10,12 +10,53 @@ from starlette.responses import JSONResponse
 
 from backend.config import settings
 
-UNAUTHENTICATED_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
-UNAUTHENTICATED_PREFIXES = ("/health", "/docs", "/openapi", "/redoc")
+# Public paths that must NOT require a JWT. These are matched against the
+# full request path. Public auth endpoints (signup/signin/login/signout/refresh)
+# are listed both with and without the `/api/v1` prefix so they bypass the
+# middleware regardless of how they are mounted. Protected routes
+# (e.g. /auth/profile, /auth/me, /portfolio/*, /watchlist/*, ...) are NOT here
+# and therefore still require a valid Authorization header.
+PUBLIC_AUTH = (
+    "/api/v1/auth/signup",
+    "/api/v1/auth/signin",
+    "/api/v1/auth/login",
+    "/api/v1/auth/login/form",
+    "/api/v1/auth/signout",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/refresh",
+    "/auth/signup",
+    "/auth/signin",
+    "/auth/login",
+    "/auth/login/form",
+    "/auth/signout",
+    "/auth/logout",
+    "/auth/refresh",
+)
+
+UNAUTHENTICATED_PATHS = {
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    *PUBLIC_AUTH,
+}
+UNAUTHENTICATED_PREFIXES = (
+    "/health",
+    "/docs",
+    "/openapi",
+    "/redoc",
+    *PUBLIC_AUTH,
+)
 
 
 class SupabaseJWTMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[..., Any]) -> Response:
+        # Browsers issue CORS preflight OPTIONS requests before real requests.
+        # Do NOT require auth for OPTIONS - pass through so CORSMiddleware can
+        # answer the preflight with the correct Access-Control-* headers.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         path = request.url.path
 
         if path in UNAUTHENTICATED_PATHS or path.startswith(UNAUTHENTICATED_PREFIXES):

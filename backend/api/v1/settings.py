@@ -163,7 +163,9 @@ async def update_settings(
                 "uid": user_id,
                 "weekly": body.weekly_report_enabled if body.weekly_report_enabled is not None else True,
                 "alerts": body.price_alerts_enabled if body.price_alerts_enabled is not None else True,
-                "sentiment": body.sentiment_notifications_enabled if body.sentiment_notifications_enabled is not None else False,
+                "sentiment": body.sentiment_notifications_enabled
+                if body.sentiment_notifications_enabled is not None
+                else False,
                 "theme": body.theme if body.theme else "light",
                 "currency": (body.default_currency or "USD").upper(),
                 "language": body.language if body.language else "en",

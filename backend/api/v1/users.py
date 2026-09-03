@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_async_session
@@ -84,8 +84,9 @@ async def update_user_me(
     db: AsyncSession = Depends(get_async_session),
 ) -> UserUpdateResponse:
     """Update profile fields for the authenticated user via Supabase Auth."""
-    from backend.config import settings
     from supabase import acreate_client  # type: ignore[import-untyped]
+
+    from backend.config import settings
 
     current_user = await get_current_user(request, db)
 
@@ -136,38 +137,29 @@ async def delete_user_me(
 
     This action cannot be undone. All associated data will be removed.
     """
-    from backend.config import settings
     from supabase import acreate_client  # type: ignore[import-untyped]
+
+    from backend.config import settings
 
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
 
     # Use service-role key to delete users (admin action)
-    admin_client = await acreate_client(
-        settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
-    )
+    admin_client = await acreate_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
     try:
         # First clean up user-owned data from our database
         from sqlalchemy import text
 
         async with db.begin_nested():
-            await db.execute(
-                text("DELETE FROM user_settings WHERE user_id = :uid"), {"uid": user_id}
-            )
-            await db.execute(
-                text("DELETE FROM watchlists WHERE user_id = :uid"), {"uid": user_id}
-            )
-            await db.execute(
-                text("DELETE FROM portfolio_assets WHERE user_id = :uid"), {"uid": user_id}
-            )
+            await db.execute(text("DELETE FROM user_settings WHERE user_id = :uid"), {"uid": user_id})
+            await db.execute(text("DELETE FROM watchlists WHERE user_id = :uid"), {"uid": user_id})
+            await db.execute(text("DELETE FROM portfolio_assets WHERE user_id = :uid"), {"uid": user_id})
             await db.execute(
                 text("DELETE FROM portfolio_transactions WHERE user_id = :uid"),
                 {"uid": user_id},
             )
-            await db.execute(
-                text("DELETE FROM chats WHERE user_id = :uid"), {"uid": user_id}
-            )
+            await db.execute(text("DELETE FROM chats WHERE user_id = :uid"), {"uid": user_id})
 
         # Then delete the auth user
         await admin_client.auth.admin.delete_user(user_id)

@@ -103,13 +103,15 @@ class ContextBuilder:
                 continue
             seen.add(doc_id)
 
-            sources.append({
-                "document_id": doc_id,
-                "filename": chunk.get("filename", "unknown"),
-                "page_number": chunk.get("page_number"),
-                "relevance_score": chunk.get("relevance_score"),
-                "text_preview": (chunk.get("text", "")[:200]),
-            })
+            sources.append(
+                {
+                    "document_id": doc_id,
+                    "filename": chunk.get("filename", "unknown"),
+                    "page_number": chunk.get("page_number"),
+                    "relevance_score": chunk.get("relevance_score"),
+                    "text_preview": (chunk.get("text", "")[:200]),
+                }
+            )
 
         return sources
 

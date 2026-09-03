@@ -13,9 +13,7 @@ from .base import Base
 class UserSetting(Base):
     __tablename__ = "user_settings"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -27,9 +25,5 @@ class UserSetting(Base):
     notification_market: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     api_key_openai: Mapped[str | None] = mapped_column(String(255), nullable=True)
     api_key_gemini: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=datetime.utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

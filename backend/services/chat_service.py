@@ -7,9 +7,6 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from backend.database import async_session_factory
 from backend.rag.engine import RAGEngine
 

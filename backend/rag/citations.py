@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 
@@ -33,16 +31,18 @@ class CitationGenerator:
 
             citation_id = hashlib.md5(dedup_key.encode()).hexdigest()[:12]
 
-            citations.append({
-                "id": citation_id,
-                "reference_number": idx,
-                "document_id": doc_id,
-                "filename": chunk.get("filename", "unknown"),
-                "page_number": chunk.get("page_number"),
-                "text_preview": text_preview,
-                "relevance_score": chunk.get("relevance_score"),
-                "chunk_index": chunk.get("chunk_index"),
-            })
+            citations.append(
+                {
+                    "id": citation_id,
+                    "reference_number": idx,
+                    "document_id": doc_id,
+                    "filename": chunk.get("filename", "unknown"),
+                    "page_number": chunk.get("page_number"),
+                    "text_preview": text_preview,
+                    "relevance_score": chunk.get("relevance_score"),
+                    "chunk_index": chunk.get("chunk_index"),
+                }
+            )
 
         return citations
 
@@ -74,10 +74,7 @@ class CitationGenerator:
                 lines.append(f"[{ref}] {filename}{page_str}: {preview}")
             elif style == "footnote":
                 page_str = f" (page {page})" if page else ""
-                lines.append(
-                    f"[{ref}] {filename}{page_str}. "
-                    f"Available in uploaded document."
-                )
+                lines.append(f"[{ref}] {filename}{page_str}. " f"Available in uploaded document.")
             elif style == "academic":
                 page_str = f", p.{page}" if page else ""
                 lines.append(f"({filename}{page_str})")

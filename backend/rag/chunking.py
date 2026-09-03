@@ -93,18 +93,23 @@ class DocumentChunker:
                 "end_char": end,
             }
 
-            chunks.append(TextChunk(
-                text=chunk_text.strip(),
-                chunk_index=idx,
-                start_char=start,
-                end_char=end,
-                metadata=chunk_meta,
-            ))
+            chunks.append(
+                TextChunk(
+                    text=chunk_text.strip(),
+                    chunk_index=idx,
+                    start_char=start,
+                    end_char=end,
+                    metadata=chunk_meta,
+                )
+            )
             char_offset = max(start, end - self.overlap)
 
         logger.debug(
             "Chunked %d chars into %d chunks (size=%d, overlap=%d)",
-            len(text), len(chunks), self.chunk_size, self.overlap,
+            len(text),
+            len(chunks),
+            self.chunk_size,
+            self.overlap,
         )
         return chunks
 
@@ -126,10 +131,7 @@ class DocumentChunker:
 
         if sep == "":
             # Character-level split as last resort
-            return [
-                text[i : i + self.chunk_size]
-                for i in range(0, len(text), self.chunk_size)
-            ]
+            return [text[i : i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
 
         parts = text.split(sep)
         chunks: list[str] = []
@@ -144,9 +146,7 @@ class DocumentChunker:
                     chunks.append(current)
                 # If a single part exceeds chunk_size, recurse
                 if len(part) > self.chunk_size:
-                    sub_chunks = self._recursive_split(
-                        part, remaining_separators
-                    )
+                    sub_chunks = self._recursive_split(part, remaining_separators)
                     chunks.extend(sub_chunks)
                     current = ""
                 else:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,31 +16,25 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Request / Response schemas
+# Request / Response schemas (match the frontend contract exactly)
 # ---------------------------------------------------------------------------
 
 
 class WatchlistCreateRequest(BaseModel):
-    ticker: str = Field(min_length=1, max_length=10)
-    label: str | None = Field(default=None, max_length=50)
+    ticker: str = Field(min_length=1, max_length=20)
+    name: str | None = Field(default=None, max_length=255)
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class WatchlistItem(BaseModel):
     id: str
+    userId: str
     ticker: str
-    label: str | None = None
-    current_price: float | None = None
-    change_pct: float | None = None
-    created_at: str
-
-
-class WatchlistListResponse(BaseModel):
-    items: list[WatchlistItem]
-    total: int
-
-
-class WatchlistDeleteResponse(BaseModel):
-    message: str = "Item removed from watchlist"
+    name: str | None = None
+    notes: str | None = None
+    currentPrice: float | None = None
+    changePercent: float | None = None
+    createdAt: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -47,32 +42,31 @@ class WatchlistDeleteResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "",
-    response_model=WatchlistListResponse,
-    summary="Get the current user's watchlist",
-)
+@router.get("", response_model=list[WatchlistItem], summary="Get the current user's watchlist")
 async def get_watchlist(
     request: Request,
     db: AsyncSession = Depends(get_async_session),
     include_prices: bool = Query(default=True, description="Fetch live prices"),
-) -> WatchlistListResponse:
-    """Return the user's watchlist with optional live price enrichment."""
+) -> list[WatchlistItem]:
+    """Return the user's watchlist as a bare array (frontend contract)."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
 
-    result = await db.execute(
-        text(
-            """
-            SELECT id, ticker, label, created_at
-            FROM watchlists
-            WHERE user_id = :uid
-            ORDER BY created_at DESC
-            """
-        ),
-        {"uid": user_id},
-    )
-    rows = result.fetchall()
+    try:
+        result = await db.execute(
+            text(
+                """
+                SELECT id, user_id, ticker, name, notes, created_at
+                FROM watchlist
+                WHERE user_id = :uid
+                ORDER BY created_at DESC
+                """
+            ),
+            {"uid": user_id},
+        )
+        rows = result.fetchall()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load watchlist: {exc}")
 
     items: list[WatchlistItem] = []
     for row in rows:
@@ -98,23 +92,20 @@ async def get_watchlist(
         items.append(
             WatchlistItem(
                 id=str(row.id),
+                userId=str(row.user_id),
                 ticker=row.ticker,
-                label=row.label,
-                current_price=current_price,
-                change_pct=change_pct,
-                created_at=row.created_at.isoformat() if row.created_at else "",
+                name=row.name,
+                notes=row.notes,
+                currentPrice=current_price,
+                changePercent=change_pct,
+                createdAt=row.created_at.isoformat() if row.created_at else "",
             )
         )
 
-    return WatchlistListResponse(items=items, total=len(items))
+    return items
 
 
-@router.post(
-    "",
-    response_model=WatchlistItem,
-    status_code=status.HTTP_201_CREATED,
-    summary="Add a ticker to the watchlist",
-)
+@router.post("", response_model=WatchlistItem, status_code=status.HTTP_201_CREATED, summary="Add a ticker to the watchlist")
 async def add_to_watchlist(
     body: WatchlistCreateRequest,
     request: Request,
@@ -123,84 +114,61 @@ async def add_to_watchlist(
     """Add a company ticker to the current user's watchlist."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
-
     ticker = body.ticker.upper()
 
-    # Check for duplicates
     existing = await db.execute(
-        text(
-            "SELECT id FROM watchlists WHERE user_id = :uid AND ticker = :ticker"
-        ),
+        text("SELECT id FROM watchlist WHERE user_id = :uid AND ticker = :ticker"),
         {"uid": user_id, "ticker": ticker},
     )
     if existing.fetchone() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"'{ticker}' is already in your watchlist",
-        )
-
-    # Validate the ticker exists via yfinance
-    try:
-        import yfinance as yf  # type: ignore[import-untyped]
-
-        probe = yf.Ticker(ticker)
-        info = probe.info
-        if not info or info.get("shortName") is None:
-            raise ValueError("no data")
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Ticker '{ticker}' not found",
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"'{ticker}' is already in your watchlist")
 
     item_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
-    await db.execute(
-        text(
-            """
-            INSERT INTO watchlists (id, user_id, ticker, label, created_at)
-            VALUES (:id, :uid, :ticker, :label, :now)
-            """
-        ),
-        {"id": item_id, "uid": user_id, "ticker": ticker, "label": body.label, "now": now},
-    )
+    try:
+        await db.execute(
+            text(
+                """
+                INSERT INTO watchlist (id, user_id, ticker, name, notes, created_at)
+                VALUES (:id, :uid, :ticker, :name, :notes, :now)
+                """
+            ),
+            {"id": item_id, "uid": user_id, "ticker": ticker, "name": body.name, "notes": body.notes, "now": now},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to add to watchlist: {exc}")
 
     return WatchlistItem(
         id=item_id,
+        userId=user_id,
         ticker=ticker,
-        label=body.label,
-        created_at=now.isoformat(),
+        name=body.name,
+        notes=body.notes,
+        createdAt=now.isoformat(),
     )
 
 
-@router.delete(
-    "/{item_id}",
-    response_model=WatchlistDeleteResponse,
-    summary="Remove an item from the watchlist",
-)
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove an item from the watchlist")
 async def remove_from_watchlist(
     item_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> WatchlistDeleteResponse:
+) -> Response:
     """Remove a specific watchlist entry by its ID."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
 
     check = await db.execute(
-        text("SELECT id FROM watchlists WHERE id = :iid AND user_id = :uid"),
+        text("SELECT id FROM watchlist WHERE id = :iid AND user_id = :uid"),
         {"iid": item_id, "uid": user_id},
     )
     if check.fetchone() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Watchlist item not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watchlist item not found")
 
     await db.execute(
-        text("DELETE FROM watchlists WHERE id = :iid AND user_id = :uid"),
+        text("DELETE FROM watchlist WHERE id = :iid AND user_id = :uid"),
         {"iid": item_id, "uid": user_id},
     )
 
-    return WatchlistDeleteResponse()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

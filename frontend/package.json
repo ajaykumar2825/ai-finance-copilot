@@ -32,6 +32,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@supabase/ssr": "0.5.2",
     "@supabase/supabase-js": "2.47.8",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "5.62.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -41,6 +42,7 @@
     "lucide-react": "0.468.0",
     "next": "15.1.0",
     "next-themes": "0.4.4",
+    "postcss": "^8.5.28",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-hook-form": "7.54.2",
@@ -51,19 +53,17 @@
     "sonner": "1.7.1",
     "tailwind-animate": "0.2.10",
     "tailwind-merge": "2.6.0",
+    "tailwindcss": "^4.3.3",
     "zod": "3.24.1",
     "zustand": "5.0.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
-    "@tailwindcss/postcss": "4.0.0",
     "@types/node": "22.10.5",
     "@types/react": "19.0.3",
     "@types/react-dom": "19.0.3",
     "eslint": "9.17.0",
     "eslint-config-next": "15.1.0",
-    "postcss": "8.4.49",
-    "tailwindcss": "4.0.0",
     "typescript": "5.7.3"
   }
 }

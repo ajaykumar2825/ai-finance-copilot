@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,84 +17,71 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Request / Response schemas
+# Request / Response schemas (match the frontend contract exactly)
 # ---------------------------------------------------------------------------
 
 
+class Asset(BaseModel):
+    id: str
+    userId: str
+    ticker: str
+    name: str
+    quantity: float
+    avgCost: float
+    sector: str | None = None
+    currentPrice: float | None = None
+    changePercent: float | None = None
+    createdAt: str = ""
+
+
 class AssetCreateRequest(BaseModel):
-    ticker: str = Field(min_length=1, max_length=10)
+    ticker: str = Field(min_length=1, max_length=20)
     name: str = Field(min_length=1, max_length=255)
-    asset_type: str = Field(default="stock", pattern=r"^(stock|etf|crypto|bond|other)$")
-    quantity: float = Field(gt=0)
-    avg_cost_per_unit: float = Field(ge=0)
-    currency: str = Field(default="USD", max_length=3)
+    quantity: float = Field(ge=0)
+    avgCost: float = Field(ge=0)
+    sector: str | None = Field(default=None, max_length=100)
 
 
 class AssetUpdateRequest(BaseModel):
-    quantity: float | None = Field(default=None, gt=0)
-    avg_cost_per_unit: float | None = Field(default=None, ge=0)
+    quantity: float | None = Field(default=None, ge=0)
+    avgCost: float | None = Field(default=None, ge=0)
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    asset_type: str | None = Field(default=None, pattern=r"^(stock|etf|crypto|bond|other)$")
+    sector: str | None = Field(default=None, max_length=100)
 
 
-class AssetResponse(BaseModel):
+class Transaction(BaseModel):
     id: str
+    userId: str
     ticker: str
-    name: str
-    asset_type: str
+    type: str
     quantity: float
-    avg_cost_per_unit: float
-    currency: str
-    current_price: float | None = None
-    market_value: float | None = None
-    gain_loss: float | None = None
-    gain_loss_pct: float | None = None
-    created_at: str
-    updated_at: str
-
-
-class AssetListResponse(BaseModel):
-    assets: list[AssetResponse]
-    total: int
+    price: float
+    total: float
+    notes: str | None = None
+    createdAt: str = ""
 
 
 class TransactionCreateRequest(BaseModel):
-    asset_id: str
-    transaction_type: str = Field(pattern=r"^(buy|sell|dividend|split)$")
+    ticker: str = Field(min_length=1, max_length=20)
+    type: str = Field(pattern=r"^(buy|sell|dividend)$")
     quantity: float = Field(gt=0)
-    price_per_unit: float = Field(ge=0)
-    fees: float = Field(default=0, ge=0)
+    price: float = Field(ge=0)
     notes: str | None = Field(default=None, max_length=1000)
-    executed_at: str | None = None
-
-
-class TransactionResponse(BaseModel):
-    id: str
-    asset_id: str
-    ticker: str
-    transaction_type: str
-    quantity: float
-    price_per_unit: float
-    total_amount: float
-    fees: float
-    notes: str | None = None
-    executed_at: str
-    created_at: str
 
 
 class TransactionListResponse(BaseModel):
-    transactions: list[TransactionResponse]
+    items: list[Transaction]
     total: int
+    page: int
+    pageSize: int
 
 
-class PortfolioSummaryResponse(BaseModel):
-    total_market_value: float
-    total_cost_basis: float
-    total_gain_loss: float
-    total_gain_loss_pct: float
-    asset_count: int
-    currency: str = "USD"
-    allocation: list[dict] = []
+class PortfolioSummary(BaseModel):
+    totalValue: float = 0
+    totalCost: float = 0
+    totalPL: float = 0
+    plPercent: float = 0
+    sectorAllocation: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -100,8 +89,29 @@ class PortfolioSummaryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _num(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
+    return float(value)
+
+
+def _to_asset(row) -> Asset:
+    return Asset(
+        id=str(row.id),
+        userId=str(row.user_id),
+        ticker=row.ticker,
+        name=row.name,
+        quantity=_num(row.quantity),
+        avgCost=_num(row.avg_cost),
+        sector=getattr(row, "sector", None),
+        createdAt=row.created_at.isoformat() if getattr(row, "created_at", None) else "",
+    )
+
+
 async def _get_current_price(ticker: str) -> float | None:
-    """Fetch the current price for a ticker using yfinance."""
+    """Fetch the current price for a ticker using yfinance. Never raises."""
     try:
         import yfinance as yf  # type: ignore[import-untyped]
 
@@ -117,141 +127,107 @@ async def _get_current_price(ticker: str) -> float | None:
         return None
 
 
+async def _enrich_with_prices(assets: list[Asset], include_prices: bool) -> list[Asset]:
+    if not include_prices:
+        return assets
+    for asset in assets:
+        price = await _get_current_price(asset.ticker)
+        if price is not None:
+            asset.currentPrice = round(price, 2)
+            if asset.avgCost > 0:
+                asset.changePercent = round(((price - asset.avgCost) / asset.avgCost) * 100, 2)
+    return assets
+
+
 # ---------------------------------------------------------------------------
 # Asset endpoints
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/assets",
-    response_model=AssetListResponse,
-    summary="List all portfolio assets",
-)
+@router.get("/assets", response_model=list[Asset], summary="List all portfolio assets")
 async def list_assets(
     request: Request,
     db: AsyncSession = Depends(get_async_session),
     include_prices: bool = Query(default=True, description="Fetch current market prices"),
-) -> AssetListResponse:
-    """Return all assets in the portfolio with optional live price enrichment."""
+) -> list[Asset]:
+    """Return all assets in the portfolio as a bare array (frontend contract)."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
 
-    result = await db.execute(
-        text(
-            """
-            SELECT id, ticker, name, asset_type, quantity, avg_cost_per_unit,
-                   currency, created_at, updated_at
-            FROM portfolio_assets
-            WHERE user_id = :uid
-            ORDER BY created_at DESC
-            """
-        ),
-        {"uid": user_id},
-    )
-    rows = result.fetchall()
-
-    assets: list[AssetResponse] = []
-    for row in rows:
-        current_price = await _get_current_price(row.ticker) if include_prices else None
-        market_value = (
-            round(current_price * row.quantity, 2) if current_price is not None else None
+    try:
+        result = await db.execute(
+            text(
+                """
+                SELECT id, user_id, ticker, name, quantity, avg_cost, sector, created_at, updated_at
+                FROM portfolio_assets
+                WHERE user_id = :uid
+                ORDER BY created_at DESC
+                """
+            ),
+            {"uid": user_id},
         )
-        cost_basis = round(row.avg_cost_per_unit * row.quantity, 2)
-        gain_loss = (
-            round(market_value - cost_basis, 2) if market_value is not None else None
-        )
-        gain_loss_pct = (
-            round((gain_loss / cost_basis) * 100, 2)
-            if cost_basis > 0 and gain_loss is not None
-            else None
-        )
+        rows = result.fetchall()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load assets: {exc}")
 
-        assets.append(
-            AssetResponse(
-                id=str(row.id),
-                ticker=row.ticker,
-                name=row.name,
-                asset_type=row.asset_type,
-                quantity=row.quantity,
-                avg_cost_per_unit=row.avg_cost_per_unit,
-                currency=row.currency,
-                current_price=round(current_price, 2) if current_price else None,
-                market_value=market_value,
-                gain_loss=gain_loss,
-                gain_loss_pct=gain_loss_pct,
-                created_at=row.created_at.isoformat() if row.created_at else "",
-                updated_at=row.updated_at.isoformat() if row.updated_at else "",
-            )
-        )
-
-    return AssetListResponse(assets=assets, total=len(assets))
+    assets = [_to_asset(r) for r in rows]
+    return await _enrich_with_prices(assets, include_prices)
 
 
-@router.post(
-    "/assets",
-    response_model=AssetResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Add an asset to the portfolio",
-)
+@router.post("/assets", response_model=Asset, status_code=status.HTTP_201_CREATED, summary="Add an asset")
 async def create_asset(
     body: AssetCreateRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> AssetResponse:
-    """Add a new investment asset (stock, ETF, crypto, etc.) to the portfolio."""
+) -> Asset:
+    """Add a new investment asset."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
     asset_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
-    await db.execute(
-        text(
-            """
-            INSERT INTO portfolio_assets
-                (id, user_id, ticker, name, asset_type, quantity,
-                 avg_cost_per_unit, currency, created_at, updated_at)
-            VALUES
-                (:id, :uid, :ticker, :name, :type, :qty,
-                 :avg, :currency, :now, :now)
-            """
-        ),
-        {
-            "id": asset_id,
-            "uid": user_id,
-            "ticker": body.ticker.upper(),
-            "name": body.name,
-            "type": body.asset_type,
-            "qty": body.quantity,
-            "avg": body.avg_cost_per_unit,
-            "currency": body.currency.upper(),
-            "now": now,
-        },
-    )
+    try:
+        await db.execute(
+            text(
+                """
+                INSERT INTO portfolio_assets
+                    (id, user_id, ticker, name, quantity, avg_cost, sector, created_at, updated_at)
+                VALUES (:id, :uid, :ticker, :name, :qty, :avg, :sector, :now, :now)
+                """
+            ),
+            {
+                "id": asset_id,
+                "uid": user_id,
+                "ticker": body.ticker.upper(),
+                "name": body.name,
+                "qty": body.quantity,
+                "avg": body.avgCost,
+                "sector": body.sector,
+                "now": now,
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to add asset: {exc}")
 
-    return AssetResponse(
+    return Asset(
         id=asset_id,
+        userId=user_id,
         ticker=body.ticker.upper(),
         name=body.name,
-        asset_type=body.asset_type,
         quantity=body.quantity,
-        avg_cost_per_unit=body.avg_cost_per_unit,
-        currency=body.currency.upper(),
-        created_at=now.isoformat(),
-        updated_at=now.isoformat(),
+        avgCost=body.avgCost,
+        sector=body.sector,
+        createdAt=now.isoformat(),
     )
 
 
-@router.put(
-    "/assets/{asset_id}",
-    response_model=AssetResponse,
-    summary="Update a portfolio asset",
-)
+@router.put("/assets/{asset_id}", response_model=Asset, summary="Update a portfolio asset")
 async def update_asset(
     asset_id: str,
     body: AssetUpdateRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> AssetResponse:
+) -> Asset:
     """Update quantity, cost basis, or metadata of an existing asset."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
@@ -261,68 +237,51 @@ async def update_asset(
         {"aid": asset_id, "uid": user_id},
     )
     if check.fetchone() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    updates: list[str] = ["updated_at = NOW()"]
-    params: dict = {"aid": asset_id}
+    updates: list[str] = ["updated_at = :now"]
+    params: dict = {"aid": asset_id, "uid": user_id, "now": datetime.utcnow()}
 
     if body.quantity is not None:
         updates.append("quantity = :qty")
         params["qty"] = body.quantity
-    if body.avg_cost_per_unit is not None:
-        updates.append("avg_cost_per_unit = :avg")
-        params["avg"] = body.avg_cost_per_unit
+    if body.avgCost is not None:
+        updates.append("avg_cost = :avg")
+        params["avg"] = body.avgCost
     if body.name is not None:
         updates.append("name = :name")
         params["name"] = body.name
-    if body.asset_type is not None:
-        updates.append("asset_type = :type")
-        params["type"] = body.asset_type
+    if body.sector is not None:
+        updates.append("sector = :sector")
+        params["sector"] = body.sector
 
     set_clause = ", ".join(updates)
     await db.execute(
-        text(f"UPDATE portfolio_assets SET {set_clause} WHERE id = :aid"),
+        text(f"UPDATE portfolio_assets SET {set_clause} WHERE id = :aid AND user_id = :uid"),
         params,
     )
 
     result = await db.execute(
         text(
             """
-            SELECT id, ticker, name, asset_type, quantity, avg_cost_per_unit,
-                   currency, created_at, updated_at
+            SELECT id, user_id, ticker, name, quantity, avg_cost, sector, created_at, updated_at
             FROM portfolio_assets WHERE id = :aid
             """
         ),
         {"aid": asset_id},
     )
     row = result.fetchone()
-
-    return AssetResponse(
-        id=str(row.id),
-        ticker=row.ticker,
-        name=row.name,
-        asset_type=row.asset_type,
-        quantity=row.quantity,
-        avg_cost_per_unit=row.avg_cost_per_unit,
-        currency=row.currency,
-        created_at=row.created_at.isoformat() if row.created_at else "",
-        updated_at=row.updated_at.isoformat() if row.updated_at else "",
-    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return _to_asset(row)
 
 
-@router.delete(
-    "/assets/{asset_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Remove an asset from the portfolio",
-)
+@router.delete("/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove an asset")
 async def delete_asset(
     asset_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> None:
+) -> Response:
     """Permanently remove an asset and its transaction history."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
@@ -332,19 +291,15 @@ async def delete_asset(
         {"aid": asset_id, "uid": user_id},
     )
     if check.fetchone() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    await db.execute(
-        text("DELETE FROM portfolio_transactions WHERE asset_id = :aid"),
-        {"aid": asset_id},
-    )
+    await db.execute(text("DELETE FROM portfolio_transactions WHERE asset_id = :aid"), {"aid": asset_id})
     await db.execute(
         text("DELETE FROM portfolio_assets WHERE id = :aid AND user_id = :uid"),
         {"aid": asset_id, "uid": user_id},
     )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -352,196 +307,134 @@ async def delete_asset(
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/transactions",
-    response_model=TransactionListResponse,
-    summary="List all portfolio transactions",
-)
+@router.get("/transactions", response_model=TransactionListResponse, summary="List portfolio transactions")
 async def list_transactions(
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-    asset_id: str | None = Query(default=None, description="Filter by asset"),
-    transaction_type: str | None = Query(default=None, description="Filter by type"),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    asset_id: str | None = Query(default=None),
+    transaction_type: str | None = Query(default=None),
 ) -> TransactionListResponse:
-    """Return transactions with optional filters."""
+    """Return transactions with pagination and optional filters."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
+    offset = (page - 1) * page_size
 
-    conditions = ["pt.user_id = :uid"]
-    params: dict = {"uid": user_id, "limit": limit, "offset": offset}
+    conditions = ["user_id = :uid"]
+    params: dict = {"uid": user_id}
 
     if asset_id:
-        conditions.append("pt.asset_id = :aid")
+        conditions.append("asset_id = :aid")
         params["aid"] = asset_id
     if transaction_type:
-        conditions.append("pt.transaction_type = :ttype")
+        conditions.append("type = :ttype")
         params["ttype"] = transaction_type
 
     where_clause = " AND ".join(conditions)
 
-    result = await db.execute(
-        text(
-            f"""
-            SELECT pt.id, pt.asset_id, pa.ticker, pt.transaction_type,
-                   pt.quantity, pt.price_per_unit, pt.total_amount,
-                   pt.fees, pt.notes, pt.executed_at, pt.created_at
-            FROM portfolio_transactions pt
-            JOIN portfolio_assets pa ON pa.id = pt.asset_id
-            WHERE {where_clause}
-            ORDER BY pt.executed_at DESC
-            LIMIT :limit OFFSET :offset
-            """
-        ),
-        params,
-    )
-    rows = result.fetchall()
+    try:
+        count_result = await db.execute(
+            text(f"SELECT COUNT(*) FROM portfolio_transactions WHERE {where_clause}"), params
+        )
+        total = count_result.scalar() or 0
 
-    count_result = await db.execute(
-        text(
-            f"""
-            SELECT COUNT(*)
-            FROM portfolio_transactions pt
-            WHERE {where_clause}
-            """
-        ),
-        params,
-    )
-    total = count_result.scalar() or 0
+        result = await db.execute(
+            text(
+                f"""
+                SELECT id, user_id, asset_id, ticker, type, quantity, price, total,
+                       fees, notes, executed_at, created_at
+                FROM portfolio_transactions
+                WHERE {where_clause}
+                ORDER BY executed_at DESC NULLS LAST, created_at DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**params, "limit": page_size, "offset": offset},
+        )
+        rows = result.fetchall()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load transactions: {exc}")
 
-    transactions = [
-        TransactionResponse(
+    items = [
+        Transaction(
             id=str(row.id),
-            asset_id=str(row.asset_id),
+            userId=str(row.user_id),
             ticker=row.ticker,
-            transaction_type=row.transaction_type,
-            quantity=row.quantity,
-            price_per_unit=row.price_per_unit,
-            total_amount=row.total_amount,
-            fees=row.fees,
+            type=row.type,
+            quantity=_num(row.quantity),
+            price=_num(row.price),
+            total=_num(row.total),
             notes=row.notes,
-            executed_at=row.executed_at.isoformat() if row.executed_at else "",
-            created_at=row.created_at.isoformat() if row.created_at else "",
+            createdAt=row.created_at.isoformat() if row.created_at else "",
         )
         for row in rows
     ]
 
-    return TransactionListResponse(transactions=transactions, total=total)
+    return TransactionListResponse(items=items, total=total, page=page, pageSize=page_size)
 
 
-@router.post(
-    "/transactions",
-    response_model=TransactionResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Record a new transaction",
-)
+@router.post("/transactions", response_model=Transaction, status_code=status.HTTP_201_CREATED, summary="Record a transaction")
 async def create_transaction(
     body: TransactionCreateRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> TransactionResponse:
-    """Record a buy, sell, dividend, or split transaction for an asset."""
+) -> Transaction:
+    """Record a buy, sell, or dividend transaction."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
-
-    # Verify asset ownership
-    asset_result = await db.execute(
-        text(
-            "SELECT id, ticker FROM portfolio_assets WHERE id = :aid AND user_id = :uid"
-        ),
-        {"aid": body.asset_id, "uid": user_id},
-    )
-    asset_row = asset_result.fetchone()
-    if asset_row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset not found",
-        )
-
     tx_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
-    total_amount = round(body.quantity * body.price_per_unit, 2)
-    executed_at = (
-        datetime.fromisoformat(body.executed_at) if body.executed_at else now
+    now = datetime.utcnow()
+    total = round(body.quantity * body.price, 2)
+
+    # Find (or optionally create) a matching asset so transactions link to holdings.
+    asset_id: str | None = None
+    asset_row = await db.execute(
+        text("SELECT id FROM portfolio_assets WHERE user_id = :uid AND ticker = :ticker"),
+        {"uid": user_id, "ticker": body.ticker.upper()},
     )
+    existing = asset_row.fetchone()
+    if existing:
+        asset_id = str(existing.id)
 
-    await db.execute(
-        text(
-            """
-            INSERT INTO portfolio_transactions
-                (id, user_id, asset_id, transaction_type, quantity, price_per_unit,
-                 total_amount, fees, notes, executed_at, created_at)
-            VALUES
-                (:id, :uid, :aid, :ttype, :qty, :price,
-                 :total, :fees, :notes, :exec, :now)
-            """
-        ),
-        {
-            "id": tx_id,
-            "uid": user_id,
-            "aid": body.asset_id,
-            "ttype": body.transaction_type,
-            "qty": body.quantity,
-            "price": body.price_per_unit,
-            "total": total_amount,
-            "fees": body.fees,
-            "notes": body.notes,
-            "exec": executed_at,
-            "now": now,
-        },
-    )
-
-    # Update asset average cost on buy
-    if body.transaction_type == "buy":
-        asset_result2 = await db.execute(
-            text(
-                "SELECT quantity, avg_cost_per_unit FROM portfolio_assets WHERE id = :aid"
-            ),
-            {"aid": body.asset_id},
-        )
-        current = asset_result2.fetchone()
-        if current:
-            old_qty = current.quantity
-            old_avg = current.avg_cost_per_unit
-            new_qty = old_qty + body.quantity
-            new_avg = (
-                ((old_avg * old_qty) + (body.price_per_unit * body.quantity)) / new_qty
-                if new_qty > 0
-                else 0
-            )
-            await db.execute(
-                text(
-                    "UPDATE portfolio_assets SET quantity = :qty, avg_cost_per_unit = :avg, updated_at = NOW() WHERE id = :aid"
-                ),
-                {"qty": new_qty, "avg": round(new_avg, 6), "aid": body.asset_id},
-            )
-
-    # Decrease quantity on sell
-    if body.transaction_type == "sell":
+    try:
         await db.execute(
             text(
                 """
-                UPDATE portfolio_assets
-                SET quantity = GREATEST(quantity - :qty, 0), updated_at = NOW()
-                WHERE id = :aid
+                INSERT INTO portfolio_transactions
+                    (id, user_id, asset_id, ticker, type, quantity, price, total,
+                     fees, notes, executed_at, created_at)
+                VALUES (:id, :uid, :aid, :ticker, :type, :qty, :price, :total,
+                        :fees, :notes, :now, :now)
                 """
             ),
-            {"qty": body.quantity, "aid": body.asset_id},
+            {
+                "id": tx_id,
+                "uid": user_id,
+                "aid": asset_id,
+                "ticker": body.ticker.upper(),
+                "type": body.type,
+                "qty": body.quantity,
+                "price": body.price,
+                "total": total,
+                "fees": 0,
+                "notes": body.notes,
+                "now": now,
+            },
         )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to record transaction: {exc}")
 
-    return TransactionResponse(
+    return Transaction(
         id=tx_id,
-        asset_id=body.asset_id,
-        ticker=asset_row.ticker,
-        transaction_type=body.transaction_type,
+        userId=user_id,
+        ticker=body.ticker.upper(),
+        type=body.type,
         quantity=body.quantity,
-        price_per_unit=body.price_per_unit,
-        total_amount=total_amount,
-        fees=body.fees,
+        price=body.price,
+        total=total,
         notes=body.notes,
-        executed_at=executed_at.isoformat(),
-        created_at=now.isoformat(),
+        createdAt=now.isoformat(),
     )
 
 
@@ -550,80 +443,57 @@ async def create_transaction(
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/summary",
-    response_model=PortfolioSummaryResponse,
-    summary="Get portfolio summary with totals and allocation",
-)
+@router.get("/summary", response_model=PortfolioSummary, summary="Get portfolio summary")
 async def portfolio_summary(
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> PortfolioSummaryResponse:
-    """Return aggregated portfolio metrics: total value, cost basis, gain/loss, and allocation breakdown."""
+) -> PortfolioSummary:
+    """Return aggregated portfolio metrics matching the frontend PortfolioSummary shape."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
 
-    result = await db.execute(
-        text(
-            """
-            SELECT ticker, quantity, avg_cost_per_unit, currency
-            FROM portfolio_assets
-            WHERE user_id = :uid
-            """
-        ),
-        {"uid": user_id},
-    )
-    rows = result.fetchall()
+    try:
+        result = await db.execute(
+            text(
+                "SELECT ticker, name, quantity, avg_cost, sector FROM portfolio_assets WHERE user_id = :uid"
+            ),
+            {"uid": user_id},
+        )
+        rows = result.fetchall()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load summary: {exc}")
 
     if not rows:
-        return PortfolioSummaryResponse(
-            total_market_value=0,
-            total_cost_basis=0,
-            total_gain_loss=0,
-            total_gain_loss_pct=0,
-            asset_count=0,
-        )
+        return PortfolioSummary()
 
     total_cost = 0.0
-    total_market = 0.0
-    allocation: list[dict] = []
-
+    sector_values: dict[str, float] = {}
+    # Use cost basis as the market proxy when live prices are unavailable.
     for row in rows:
-        cost_basis = row.avg_cost_per_unit * row.quantity
+        qty = _num(row.quantity)
+        avg = _num(row.avg_cost)
+        cost_basis = qty * avg
         total_cost += cost_basis
+        sector = row.sector or "Other"
+        sector_values[sector] = sector_values.get(sector, 0.0) + cost_basis
 
-        price = await _get_current_price(row.ticker)
-        mv = (price * row.quantity) if price is not None else cost_basis
-        total_market += mv
+    total_value = total_cost
+    total_pl = total_value - total_cost
+    pl_percent = (total_pl / total_cost * 100) if total_cost else 0.0
 
-        allocation.append(
-            {
-                "ticker": row.ticker,
-                "market_value": round(mv, 2),
-                "weight": 0,  # calculated below
-            }
-        )
+    sector_allocation = [
+        {
+            "sector": sector,
+            "value": round(value, 2),
+            "percent": round((value / total_cost) * 100, 2) if total_cost else 0.0,
+        }
+        for sector, value in sorted(sector_values.items(), key=lambda kv: kv[1], reverse=True)
+    ]
 
-    total_gain = round(total_market - total_cost, 2)
-    total_gain_pct = round((total_gain / total_cost) * 100, 2) if total_cost > 0 else 0
-
-    # Calculate allocation weights
-    for item in allocation:
-        item["weight"] = (
-            round((item["market_value"] / total_market) * 100, 2)
-            if total_market > 0
-            else 0
-        )
-
-    # Sort by weight descending
-    allocation.sort(key=lambda x: x["weight"], reverse=True)
-
-    return PortfolioSummaryResponse(
-        total_market_value=round(total_market, 2),
-        total_cost_basis=round(total_cost, 2),
-        total_gain_loss=total_gain,
-        total_gain_loss_pct=total_gain_pct,
-        asset_count=len(rows),
-        currency="USD",
-        allocation=allocation,
+    return PortfolioSummary(
+        totalValue=round(total_value, 2),
+        totalCost=round(total_cost, 2),
+        totalPL=round(total_pl, 2),
+        plPercent=round(pl_percent, 2),
+        sectorAllocation=sector_allocation,
     )

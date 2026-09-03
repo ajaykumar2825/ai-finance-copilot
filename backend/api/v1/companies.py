@@ -241,15 +241,19 @@ async def company_financials(ticker: str) -> FinancialData:
             return []
         items = []
         for date, value in series.items():
-            items.append(
-                {"date": date.strftime("%Y-%m-%d"), "value": _safe_float(value)}
-            )
+            items.append({"date": date.strftime("%Y-%m-%d"), "value": _safe_float(value)})
         return items
 
     try:
         income = stock.financials
-        revenue = _series_to_list(income.loc["Total Revenue"]) if income is not None and "Total Revenue" in income.index else []
-        net_income = _series_to_list(income.loc["Net Income"]) if income is not None and "Net Income" in income.index else []
+        revenue = (
+            _series_to_list(income.loc["Total Revenue"])
+            if income is not None and "Total Revenue" in income.index
+            else []
+        )
+        net_income = (
+            _series_to_list(income.loc["Net Income"]) if income is not None and "Net Income" in income.index else []
+        )
     except Exception:
         revenue = []
         net_income = []
@@ -269,10 +273,7 @@ async def company_financials(ticker: str) -> FinancialData:
     try:
         eps_history = stock.earnings_history
         if eps_history is not None and not eps_history.empty:
-            eps_list = [
-                {"date": str(idx), "value": _safe_float(row.get("Eps"))}
-                for idx, row in eps_history.iterrows()
-            ]
+            eps_list = [{"date": str(idx), "value": _safe_float(row.get("Eps"))} for idx, row in eps_history.iterrows()]
         else:
             eps_list = []
     except Exception:
@@ -335,16 +336,18 @@ async def company_earnings(ticker: str) -> EarningsData:
     try:
         ee = stock.earnings_estimate
         if ee is not None and not ee.empty:
-            eps_estimate = {
-                col: _safe_float(ee.loc["Avg Estimate"].get(col))
-                for col in ee.columns
-            } if "Avg Estimate" in ee.index else {}
+            eps_estimate = (
+                {col: _safe_float(ee.loc["Avg Estimate"].get(col)) for col in ee.columns}
+                if "Avg Estimate" in ee.index
+                else {}
+            )
         re_ = stock.revenue_estimate
         if re_ is not None and not re_.empty:
-            rev_estimate = {
-                col: _safe_float(re_.loc["Avg Estimate"].get(col))
-                for col in re_.columns
-            } if "Avg Estimate" in re_.index else {}
+            rev_estimate = (
+                {col: _safe_float(re_.loc["Avg Estimate"].get(col)) for col in re_.columns}
+                if "Avg Estimate" in re_.index
+                else {}
+            )
     except Exception:
         pass
 

@@ -13,6 +13,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,10 +79,7 @@ def _validate_file(file: UploadFile) -> None:
     if ext not in ALLOWED_EXTENSIONS and content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"File type not allowed. "
-                f"Supported types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-            ),
+            detail=(f"File type not allowed. " f"Supported types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"),
         )
 
 
@@ -182,9 +180,7 @@ async def upload_document(
     # ---- upload to Supabase Storage ----
     from supabase import acreate_client  # type: ignore[import-untyped]
 
-    client = await acreate_client(
-        settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
-    )
+    client = await acreate_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
     try:
         await client.storage.from_(settings.STORAGE_BUCKET).upload(
@@ -288,7 +284,7 @@ async def delete_document(
     document_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> None:
+) -> Response:
     """Delete a document, its file in Supabase Storage, and its vector embeddings."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
@@ -315,9 +311,7 @@ async def delete_document(
     # Delete from Supabase Storage
     from supabase import acreate_client  # type: ignore[import-untyped]
 
-    client = await acreate_client(
-        settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
-    )
+    client = await acreate_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
     try:
         await client.storage.from_(settings.STORAGE_BUCKET).remove([row.storage_path])
@@ -338,6 +332,8 @@ async def delete_document(
         text("DELETE FROM documents WHERE id = :did AND user_id = :uid"),
         {"did": document_id, "uid": user_id},
     )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

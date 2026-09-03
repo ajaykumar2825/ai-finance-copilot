@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.api.v1.router import api_router
 from backend.config import settings
 from backend.middleware.auth import SupabaseJWTMiddleware
 from backend.middleware.rate_limit import RateLimitMiddleware
@@ -30,6 +31,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middleware order matters in Starlette: the LAST add_middleware call becomes
+# the OUTERMOST middleware (runs first). CORSMiddleware is registered last so it
+# runs before routers and before the authentication/rate-limit middleware. This
+# lets CORS answer OPTIONS preflight requests before any JWT check, and ensures
+# the middleware stack always sees CORS headers even on auth failures.
+app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+app.add_middleware(SupabaseJWTMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -38,8 +46,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
-app.add_middleware(SupabaseJWTMiddleware)
+# API routes (mounted after middleware so CORS/auth order above is respected).
+app.include_router(api_router)
 
 
 @app.exception_handler(Exception)

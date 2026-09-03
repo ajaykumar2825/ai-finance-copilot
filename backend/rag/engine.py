@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import async_session_factory
 from backend.prompts.templates import RAG_PROMPT, SYSTEM_PROMPT
@@ -73,9 +72,7 @@ class RAGEngine:
         # Store in pgvector
         async with async_session_factory() as session:
             for chunk, embedding in zip(chunks, embeddings, strict=False):
-                embedding_str = (
-                    "[" + ",".join(str(v) for v in embedding) + "]"
-                )
+                embedding_str = "[" + ",".join(str(v) for v in embedding) + "]"
                 chunk_id = str(uuid.uuid4())
 
                 chunk_meta = chunk.metadata.copy()
@@ -121,9 +118,7 @@ class RAGEngine:
             )
             await session.commit()
 
-        logger.info(
-            "Ingested document %s: %d chunks stored", document_id, len(chunks)
-        )
+        logger.info("Ingested document %s: %d chunks stored", document_id, len(chunks))
         return len(chunks)
 
     # ------------------------------------------------------------------
@@ -147,7 +142,10 @@ class RAGEngine:
         """
         # Retrieve
         chunks = await self._retriever.mmr_search(
-            query, k=k, user_id=user_id, document_id=document_id,
+            query,
+            k=k,
+            user_id=user_id,
+            document_id=document_id,
         )
 
         # Deduplicate
@@ -155,7 +153,9 @@ class RAGEngine:
 
         # Build context
         context = self._context_builder.build_prompt_context(
-            chunks, query=query, include_citations=True,
+            chunks,
+            query=query,
+            include_citations=True,
         )
 
         # Format chat history
@@ -192,12 +192,17 @@ class RAGEngine:
     ) -> dict[str, Any]:
         """Single-call RAG that returns the full response + citation metadata."""
         chunks = await self._retriever.mmr_search(
-            query, k=5, user_id=user_id, document_id=document_id,
+            query,
+            k=5,
+            user_id=user_id,
+            document_id=document_id,
         )
         chunks = RAGRetriever.deduplicate_chunks(chunks)
 
         context = self._context_builder.build_prompt_context(
-            chunks, query=query, include_citations=True,
+            chunks,
+            query=query,
+            include_citations=True,
         )
         history_text = self._format_chat_history(chat_history or [])
 

@@ -77,17 +77,21 @@ async def seed() -> None:
         print("Set it in your .env file or export it before running.")
         sys.exit(1)
 
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     engine = create_async_engine(database_url, echo=False)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     async with session_factory() as session:
         try:
-            await session.execute(
-                __import__("sqlalchemy").text("SELECT 1")
-            )
+            await session.execute(__import__("sqlalchemy").text("SELECT 1"))
             print("Database connection successful.\n")
         except Exception as e:
             print(f"ERROR: Could not connect to database: {e}")

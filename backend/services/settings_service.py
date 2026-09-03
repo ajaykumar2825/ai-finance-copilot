@@ -42,7 +42,9 @@ class SettingsService:
 
             stored = json.loads(row["settings_json"])
             merged = {**DEFAULT_SETTINGS, **stored}
-            merged["updated_at"] = row["updated_at"].isoformat() if hasattr(row["updated_at"], "isoformat") else str(row["updated_at"])
+            merged["updated_at"] = (
+                row["updated_at"].isoformat() if hasattr(row["updated_at"], "isoformat") else str(row["updated_at"])
+            )
             return merged
 
     async def update_settings(

@@ -1,134 +1,42 @@
 from __future__ import annotations
 
-from datetime import date
+import logging
+import uuid
 
-from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Response schemas
+# Response schemas (match the frontend contract exactly)
 # ---------------------------------------------------------------------------
 
 
 class NewsArticle(BaseModel):
+    id: str
+    ticker: str | None = None
     title: str
-    url: str
-    source: str | None = None
-    published_at: str | None = None
     summary: str | None = None
-    sentiment: str | None = None  # positive | negative | neutral
-    image_url: str | None = None
-    related_tickers: list[str] = []
+    sentiment: str = "neutral"
+    source: str | None = None
+    url: str
+    publishedAt: str | None = None
 
 
 class NewsListResponse(BaseModel):
-    articles: list[NewsArticle]
+    items: list[NewsArticle]
     total: int
-    ticker: str | None = None
+    page: int
+    pageSize: int
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-async def _fetch_news_from_yfinance(
-    ticker: str | None = None,
-    limit: int = 20,
-) -> list[dict]:
-    """Fetch financial news articles using yfinance."""
-    try:
-        import yfinance as yf  # type: ignore[import-untyped]
-    except ImportError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="yfinance is not installed",
-        )
-
-    articles: list[dict] = []
-
-    if ticker:
-        try:
-            stock = yf.Ticker(ticker.upper())
-            news_items = stock.news
-            if news_items:
-                for item in news_items[:limit]:
-                    content = item.get("content", {})
-                    pub_date = None
-                    if content and isinstance(content, dict):
-                        pub_date = content.get("pubDate")
-                    elif "provider" in item:
-                        pub_date = item.get("providerPublishTime")
-
-                    articles.append(
-                        {
-                            "title": item.get("title", ""),
-                            "url": item.get("link", ""),
-                            "source": (
-                                item.get("publisher", "")
-                                or (item.get("provider", {}).get("displayName", ""))
-                            ),
-                            "published_at": str(pub_date) if pub_date else None,
-                            "summary": (
-                                content.get("summary", "") if content and isinstance(content, dict) else ""
-                            ),
-                            "image_url": (
-                                content.get("thumbnail", {}).get("resolutions", [{}])[0].get("url")
-                                if content
-                                and isinstance(content, dict)
-                                and content.get("thumbnail", {}).get("resolutions")
-                                else None
-                            ),
-                            "related_tickers": [ticker.upper()],
-                        }
-                    )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch news for '{ticker}': {exc}",
-            )
-    else:
-        # General market news from yfinance
-        try:
-            # Use the Search API for general news
-            search = yf.Search("stock market", max_results=limit)
-            for item in getattr(search, "news", [])[:limit]:
-                content = item.get("content", {})
-                pub_date = None
-                if content and isinstance(content, dict):
-                    pub_date = content.get("pubDate")
-
-                articles.append(
-                    {
-                        "title": item.get("title", ""),
-                        "url": item.get("link", ""),
-                        "source": item.get("publisher", ""),
-                        "published_at": str(pub_date) if pub_date else None,
-                        "summary": (
-                            content.get("summary", "")
-                            if content and isinstance(content, dict)
-                            else ""
-                        ),
-                        "image_url": (
-                            content.get("thumbnail", {}).get("resolutions", [{}])[0].get("url")
-                            if content
-                            and isinstance(content, dict)
-                            and content.get("thumbnail", {}).get("resolutions")
-                            else None
-                        ),
-                        "related_tickers": [],
-                    }
-                )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch market news: {exc}",
-            )
-
-    return articles
 
 
 def _classify_sentiment(title: str) -> str:
@@ -138,7 +46,7 @@ def _classify_sentiment(title: str) -> str:
     positive_words = {
         "surge", "soar", "rally", "gain", "jump", "rise", "record", "high",
         "beat", "outperform", "upgrade", "bull", "boom", "profit", "growth",
-        "strong", "positive", "upgrade", "buy", "best",
+        "strong", "positive", "buy", "best",
     }
     negative_words = {
         "crash", "plunge", "drop", "fall", "decline", "loss", "slump", "low",
@@ -151,9 +59,64 @@ def _classify_sentiment(title: str) -> str:
 
     if pos_count > neg_count:
         return "positive"
-    elif neg_count > pos_count:
+    if neg_count > pos_count:
         return "negative"
     return "neutral"
+
+
+def _from_yfinance_news(news_items: list, ticker: str | None) -> list[dict]:
+    articles: list[dict] = []
+    for item in news_items:
+        content = item.get("content", {}) if isinstance(item.get("content"), dict) else {}
+        url = item.get("link") or content.get("canonicalUrl", {}).get("url") or ""
+        if not url:
+            continue
+        pub_date = content.get("pubDate")
+        articles.append(
+            {
+                "title": item.get("title", ""),
+                "url": url,
+                "source": item.get("publisher", "") or content.get("provider", {}).get("displayName", ""),
+                "published_at": str(pub_date) if pub_date else None,
+                "summary": content.get("summary", ""),
+                "related_tickers": [ticker.upper()] if ticker else [],
+            }
+        )
+    return articles
+
+
+async def _fetch_news(ticker: str | None = None, limit: int = 20) -> list[dict]:
+    """Fetch news via yfinance. Returns an empty list on any failure (never crashes)."""
+    try:
+        import yfinance as yf  # type: ignore[import-untyped]
+    except Exception as exc:
+        logger.warning("yfinance unavailable; returning empty news list: %s", exc)
+        return []
+
+    try:
+        if ticker:
+            stock = yf.Ticker(ticker.upper())
+            news_items = getattr(stock, "news", None) or []
+            return _from_yfinance_news(list(news_items)[:limit], ticker)
+        search = yf.Search("stock market", max_results=limit)
+        news_items = getattr(search, "news", []) or []
+        return _from_yfinance_news(list(news_items)[:limit], None)
+    except Exception as exc:
+        logger.warning("yfinance news fetch failed; returning empty news list: %s", exc)
+        return []
+
+
+def _to_article(raw: dict, ticker: str | None = None) -> NewsArticle:
+    return NewsArticle(
+        id=str(uuid.uuid4()),
+        ticker=ticker or (raw.get("related_tickers") or [None])[0],
+        title=raw.get("title", ""),
+        summary=raw.get("summary"),
+        sentiment=_classify_sentiment(raw.get("title", "")),
+        source=raw.get("source"),
+        url=raw.get("url", ""),
+        publishedAt=raw.get("published_at"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -161,114 +124,37 @@ def _classify_sentiment(title: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "",
-    response_model=NewsListResponse,
-    summary="Get financial news with optional filters",
-)
+@router.get("", response_model=NewsListResponse, summary="Get financial news with optional filters")
 async def list_news(
-    ticker: str | None = Query(default=None, description="Filter by ticker symbol"),
-    sentiment: str | None = Query(
-        default=None,
-        description="Filter by sentiment: positive, negative, neutral",
-        pattern=r"^(positive|negative|neutral)$",
-    ),
-    start_date: date | None = Query(default=None, description="Start date (YYYY-MM-DD)"),
-    end_date: date | None = Query(default=None, description="End date (YYYY-MM-DD)"),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    ticker: str | None = Query(default=None),
+    sentiment: str | None = Query(default=None, pattern=r"^(positive|negative|neutral)$"),
 ) -> NewsListResponse:
-    """Return financial news articles with optional filters.
+    """Return financial news articles as a paginated list (frontend contract).
 
-    Filter by ticker symbol, sentiment, and date range. Uses yfinance for
-    real-time financial news data.
+    If the external news source is unavailable the endpoint returns an empty
+    list rather than crashing.
     """
-    articles_raw = await _fetch_news_from_yfinance(
-        ticker=ticker.upper() if ticker else None,
-        limit=limit * 3,  # over-fetch to allow for filtering
-    )
+    raw = await _fetch_news(ticker=ticker.upper() if ticker else None, limit=page_size)
 
-    # Enrich with sentiment
     articles: list[NewsArticle] = []
-    for raw in articles_raw:
-        sent = _classify_sentiment(raw.get("title", ""))
-
-        # Apply sentiment filter
+    for r in raw:
+        sent = _classify_sentiment(r.get("title", ""))
         if sentiment and sent != sentiment:
             continue
+        articles.append(_to_article(r, ticker))
 
-        # Apply date filter
-        pub_at = raw.get("published_at")
-        if start_date and pub_at:
-            try:
-                from datetime import datetime
-
-                parsed = datetime.fromisoformat(pub_at.replace("Z", "+00:00")).date()
-                if parsed < start_date:
-                    continue
-            except (ValueError, TypeError):
-                pass
-
-        if end_date and pub_at:
-            try:
-                from datetime import datetime
-
-                parsed = datetime.fromisoformat(pub_at.replace("Z", "+00:00")).date()
-                if parsed > end_date:
-                    continue
-            except (ValueError, TypeError):
-                pass
-
-        articles.append(
-            NewsArticle(
-                title=raw.get("title", ""),
-                url=raw.get("url", ""),
-                source=raw.get("source"),
-                published_at=raw.get("published_at"),
-                summary=raw.get("summary"),
-                sentiment=sent,
-                image_url=raw.get("image_url"),
-                related_tickers=raw.get("related_tickers", []),
-            )
-        )
-
-    return NewsListResponse(
-        articles=articles[:limit],
-        total=len(articles),
-        ticker=ticker.upper() if ticker else None,
-    )
+    return NewsListResponse(items=articles[:page_size], total=len(articles), page=page, pageSize=page_size)
 
 
-@router.get(
-    "/{ticker}",
-    response_model=NewsListResponse,
-    summary="Get news for a specific company",
-)
+@router.get("/company/{ticker}", response_model=NewsListResponse, summary="Get news for a specific company")
 async def company_news(
     ticker: str,
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
 ) -> NewsListResponse:
     """Return recent news articles related to a specific company ticker."""
-    articles_raw = await _fetch_news_from_yfinance(
-        ticker=ticker.upper(),
-        limit=limit,
-    )
-
-    articles = [
-        NewsArticle(
-            title=raw.get("title", ""),
-            url=raw.get("url", ""),
-            source=raw.get("source"),
-            published_at=raw.get("published_at"),
-            summary=raw.get("summary"),
-            sentiment=_classify_sentiment(raw.get("title", "")),
-            image_url=raw.get("image_url"),
-            related_tickers=[ticker.upper()],
-        )
-        for raw in articles_raw
-    ]
-
-    return NewsListResponse(
-        articles=articles[:limit],
-        total=len(articles),
-        ticker=ticker.upper(),
-    )
+    raw = await _fetch_news(ticker=ticker.upper(), limit=page_size)
+    articles = [_to_article(r, ticker) for r in raw]
+    return NewsListResponse(items=articles[:page_size], total=len(articles), page=page, pageSize=page_size)

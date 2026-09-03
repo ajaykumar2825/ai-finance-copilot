@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from langchain_core.embeddings import Embeddings
 
@@ -34,10 +33,7 @@ def get_embeddings() -> Embeddings:
     elif provider == "local":
         _embeddings_instance = _create_local_embeddings()
     else:
-        raise ValueError(
-            f"Unknown EMBEDDING_PROVIDER '{provider}'. "
-            "Supported: openai, gemini, local"
-        )
+        raise ValueError(f"Unknown EMBEDDING_PROVIDER '{provider}'. " "Supported: openai, gemini, local")
 
     logger.info("Embedding provider initialised: %s", provider)
     return _embeddings_instance

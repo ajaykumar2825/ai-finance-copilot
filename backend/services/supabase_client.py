@@ -20,9 +20,7 @@ def get_service_client() -> Client:
     """Return a Supabase client using the service-role key (bypasses RLS)."""
     global _service_client
     if _service_client is None:
-        _service_client = create_client(
-            settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
-        )
+        _service_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
     return _service_client
 
 

@@ -46,6 +46,7 @@ def _verify_token(token: str) -> dict[str, Any]:
         )
 
     payload["user_id"] = user_id
+    payload["id"] = user_id
     return payload
 
 

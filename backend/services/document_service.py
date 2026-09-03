@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.config import settings
 from backend.database import async_session_factory
 from backend.services.storage import delete_file, download_file, upload_file
 from backend.utils.file_parser import (
@@ -43,10 +42,7 @@ class DocumentService:
         content_type: str,
     ) -> dict[str, Any]:
         if content_type not in self.ALLOWED_TYPES:
-            raise ValueError(
-                f"Unsupported file type: {content_type}. "
-                f"Allowed: {', '.join(self.ALLOWED_TYPES)}"
-            )
+            raise ValueError(f"Unsupported file type: {content_type}. " f"Allowed: {', '.join(self.ALLOWED_TYPES)}")
 
         doc_id = str(uuid.uuid4())
         ext = self.EXTENSION_MAP.get(content_type, "bin")
@@ -150,9 +146,7 @@ class DocumentService:
         # Delete vector chunks
         async with async_session_factory() as session:
             await session.execute(
-                __import__("sqlalchemy").text(
-                    "DELETE FROM document_chunks WHERE document_id = :doc_id"
-                ),
+                __import__("sqlalchemy").text("DELETE FROM document_chunks WHERE document_id = :doc_id"),
                 {"doc_id": document_id},
             )
             result = await session.execute(

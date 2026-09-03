@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import async_session_factory
 from backend.rag.embeddings import get_embeddings
@@ -84,7 +83,10 @@ class RAGRetriever:
         """Combine BM25 full-text search with vector similarity."""
         # Get vector results
         vector_results = await self.semantic_search(
-            query, k=k * 2, user_id=user_id, document_id=document_id,
+            query,
+            k=k * 2,
+            user_id=user_id,
+            document_id=document_id,
         )
 
         # Get text search results using PostgreSQL full-text search
@@ -126,9 +128,7 @@ class RAGRetriever:
 
         # Merge and rank
         scored: dict[str, dict[str, Any]] = {}
-        max_text_score = max(
-            (r.get("text_score", 0) for r in text_results), default=1.0
-        ) or 1.0
+        max_text_score = max((r.get("text_score", 0) for r in text_results), default=1.0) or 1.0
 
         for rank, r in enumerate(vector_results):
             rid = r["id"]
@@ -137,7 +137,7 @@ class RAGRetriever:
 
         for rank, r in enumerate(text_results):
             rid = r["id"]
-            norm_text = (r.get("text_score", 0) / max_text_score)
+            norm_text = r.get("text_score", 0) / max_text_score
             if rid in scored:
                 scored[rid]["_score"] += norm_text * bm25_weight
             else:
@@ -161,7 +161,10 @@ class RAGRetriever:
     ) -> list[dict[str, Any]]:
         """Maximal Marginal Relevance search for diversity."""
         candidates = await self.semantic_search(
-            query, k=fetch_k, user_id=user_id, document_id=document_id,
+            query,
+            k=fetch_k,
+            user_id=user_id,
+            document_id=document_id,
         )
 
         if not candidates:
@@ -191,11 +194,11 @@ class RAGRetriever:
                 if cand_emb is None:
                     max_redundancy = 0.0
                 else:
-                    max_redundancy = max(
-                        _cosine_sim(cand_emb, sel_emb)
-                        for sel_emb in selected_embeddings
-                        if sel_emb is not None
-                    ) if selected_embeddings else 0.0
+                    max_redundancy = (
+                        max(_cosine_sim(cand_emb, sel_emb) for sel_emb in selected_embeddings if sel_emb is not None)
+                        if selected_embeddings
+                        else 0.0
+                    )
 
                 mmr_score = lambda_mult * sim_to_query - (1 - lambda_mult) * max_redundancy
 

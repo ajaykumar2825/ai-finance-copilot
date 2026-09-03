@@ -86,15 +86,52 @@ def extract_tickers(text: str) -> list[str]:
     """
     # Words that commonly appear in ALL CAPS in financial text
     false_positive = {
-        "USA", "US", "EU", "AI", "CEO", "CFO", "COO", "CTO", "IPO", "GDP",
-        "ETF", "SEC", "FDA", "EPS", "P/E", "PE", "ROE", "ROA", "ROI",
-        "YOY", "FCF", "EBITDA", "NASDAQ", "NYSE", "TSX", "LSE", "HK",
-        "THIS", "THAT", "AND", "THE", "FOR", "WITH", "NOT", "ARE", "YOUR",
-        "EVERY", "WHEN", "FROM", "THAN", "THEN", "THEY", "WHAT", "WILL",
+        "USA",
+        "US",
+        "EU",
+        "AI",
+        "CEO",
+        "CFO",
+        "COO",
+        "CTO",
+        "IPO",
+        "GDP",
+        "ETF",
+        "SEC",
+        "FDA",
+        "EPS",
+        "P/E",
+        "PE",
+        "ROE",
+        "ROA",
+        "ROI",
+        "YOY",
+        "FCF",
+        "EBITDA",
+        "NASDAQ",
+        "NYSE",
+        "TSX",
+        "LSE",
+        "HK",
+        "THIS",
+        "THAT",
+        "AND",
+        "THE",
+        "FOR",
+        "WITH",
+        "NOT",
+        "ARE",
+        "YOUR",
+        "EVERY",
+        "WHEN",
+        "FROM",
+        "THAN",
+        "THEN",
+        "THEY",
+        "WHAT",
+        "WILL",
     }
 
     matches = _TICKER_PATTERN.findall(text)
-    tickers = sorted(
-        {m for m in matches if m not in false_positive and len(m) >= 2}
-    )
+    tickers = sorted({m for m in matches if m not in false_positive and len(m) >= 2})
     return tickers

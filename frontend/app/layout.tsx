@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter, IBM_Plex_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { QueryProvider } from "@/components/providers";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -86,7 +87,9 @@ export default function RootLayout({
             enableSystem={false}
             disableTransitionOnChange
           >
-            {children}
+            <TooltipProvider delayDuration={200}>
+              {children}
+            </TooltipProvider>
             <Toaster
               position="top-right"
               toastOptions={{

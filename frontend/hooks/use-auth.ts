@@ -24,7 +24,13 @@ export function useAuth() {
   });
 
   const signUpMutation = useMutation({
-    mutationFn: (data: SignUpData) => authService.signUp(data),
+    mutationFn: async (data: SignUpData) => {
+      const response = await authService.signUp(data);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      return response;
+    },
     onSuccess: (response) => {
       if (response.data) {
         localStorage.setItem("access_token", response.data.access_token);
@@ -36,7 +42,13 @@ export function useAuth() {
   });
 
   const signInMutation = useMutation({
-    mutationFn: (data: SignInData) => authService.signIn(data),
+    mutationFn: async (data: SignInData) => {
+      const response = await authService.signIn(data);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      return response;
+    },
     onSuccess: (response) => {
       if (response.data) {
         localStorage.setItem("access_token", response.data.access_token);

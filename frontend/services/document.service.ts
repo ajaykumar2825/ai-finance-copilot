@@ -29,7 +29,9 @@ export const documentService = {
     formData.append("file", file);
 
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/documents`,
+      `${
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      }/api/v1/documents`,
       {
         method: "POST",
         headers: {

@@ -42,8 +42,7 @@ class AuthService:
 
         if response.session is None:
             raise ValueError(
-                "Signup succeeded but no session returned. "
-                "Check email confirmation settings in Supabase."
+                "Signup succeeded but no session returned. " "Check email confirmation settings in Supabase."
             )
 
         return {
@@ -66,9 +65,7 @@ class AuthService:
         Returns:
             Dict with ``access_token``, ``refresh_token``, ``user``.
         """
-        response = self._client.auth.sign_in_with_password(
-            {"email": email, "password": password}
-        )
+        response = self._client.auth.sign_in_with_password({"email": email, "password": password})
 
         if response.session is None:
             raise ValueError("Login failed: no session returned.")

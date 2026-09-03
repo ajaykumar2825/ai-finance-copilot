@@ -10,8 +10,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuthStore } from "@/stores/auth.store";
 
 export function Navbar() {
+  const { user } = useAuthStore();
+  const fallback =
+    user?.fullName?.trim()?.charAt(0) ||
+    user?.email?.trim()?.charAt(0) ||
+    "U";
+  const displayName = user?.fullName || user?.email || "User";
+  const initial = fallback.toUpperCase();
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-surface/50 px-6 backdrop-blur-sm">
       <div className="flex items-center gap-4">
@@ -40,12 +49,16 @@ export function Navbar() {
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-                  U
+                  {initial}
                 </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem className="flex flex-col items-start">
+              <span className="text-sm">{displayName}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem className="text-sm">Profile</DropdownMenuItem>
             <DropdownMenuItem className="text-sm">Settings</DropdownMenuItem>
             <DropdownMenuSeparator />

@@ -33,9 +33,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.monotonic()
         cutoff = now - self.window_seconds
 
-        self._requests[client_ip] = [
-            ts for ts in self._requests[client_ip] if ts > cutoff
-        ]
+        self._requests[client_ip] = [ts for ts in self._requests[client_ip] if ts > cutoff]
 
         if len(self._requests[client_ip]) >= self.max_requests:
             return JSONResponse(

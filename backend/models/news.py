@@ -13,9 +13,7 @@ from .base import Base
 class NewsArticle(Base):
     __tablename__ = "news_articles"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ticker: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -26,6 +24,4 @@ class NewsArticle(Base):
     source: Mapped[str | None] = mapped_column(String(255), nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cached_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=datetime.utcnow
-    )
+    cached_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)

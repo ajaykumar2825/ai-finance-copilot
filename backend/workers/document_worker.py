@@ -38,13 +38,9 @@ async def process_document_async(
             metadata=metadata,
             user_id=user_id,
         )
-        logger.info(
-            "Document worker finished: %s (%d chunks)", document_id, chunk_count
-        )
+        logger.info("Document worker finished: %s (%d chunks)", document_id, chunk_count)
     except Exception as exc:
-        logger.exception(
-            "Document worker failed to process %s: %s", document_id, exc
-        )
+        logger.exception("Document worker failed to process %s: %s", document_id, exc)
 
 
 def schedule_document_processing(

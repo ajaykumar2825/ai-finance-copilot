@@ -45,9 +45,7 @@ class WatchlistService:
         # Check for duplicates
         existing = await self._find_item(user_id, ticker.upper(), list_name)
         if existing is not None:
-            raise ValueError(
-                f"{ticker.upper()} is already in watchlist '{list_name}'"
-            )
+            raise ValueError(f"{ticker.upper()} is already in watchlist '{list_name}'")
 
         item_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
@@ -125,14 +123,16 @@ class WatchlistService:
                 logger.warning("Price fetch for %s failed: %s", ticker, exc)
                 price_data = {"price": None, "error": str(exc)}
 
-            enriched.append({
-                **item,
-                "current_price": price_data.get("price"),
-                "open": price_data.get("open"),
-                "high": price_data.get("high"),
-                "low": price_data.get("low"),
-                "volume": price_data.get("volume"),
-            })
+            enriched.append(
+                {
+                    **item,
+                    "current_price": price_data.get("price"),
+                    "open": price_data.get("open"),
+                    "high": price_data.get("high"),
+                    "low": price_data.get("low"),
+                    "volume": price_data.get("volume"),
+                }
+            )
 
         return enriched
 

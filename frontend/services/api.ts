@@ -1,6 +1,13 @@
 import { ApiResponse } from "../types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_PREFIX = "/api/v1";
+
+function buildUrl(endpoint: string): string {
+  const slash = endpoint.startsWith("/") ? "" : "/";
+  const prefixed = `${API_PREFIX}${slash}${endpoint}`;
+  return `${BASE_URL}${prefixed}`;
+}
 
 class ApiClient {
   private getAuthHeaders(): HeadersInit {
@@ -18,7 +25,7 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint}`;
+    const url = buildUrl(endpoint);
     const headers = {
       ...this.getAuthHeaders(),
       ...options.headers,
@@ -97,7 +104,7 @@ class ApiClient {
       });
     }
 
-    const url = `${BASE_URL}${endpoint}?${params.toString()}`;
+    const url = `${buildUrl(endpoint)}?${params.toString()}`;
     return new EventSource(url);
   }
 }

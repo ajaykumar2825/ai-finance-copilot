@@ -37,10 +37,7 @@ async def upload_file(
 
     logger.info("Uploading file to %s/%s (%d bytes)", bucket, path, len(file_data))
 
-    response = (
-        client.storage.from_(bucket)
-        .upload(path, file_data, {"contentType": content_type, "upsert": upsert})
-    )
+    response = client.storage.from_(bucket).upload(path, file_data, {"contentType": content_type, "upsert": upsert})
     return response  # type: ignore[no-any-return]
 
 
@@ -131,8 +128,11 @@ async def list_files(
     bucket = bucket or settings.STORAGE_BUCKET
     client = get_service_client()
 
-    response = client.storage.from_(bucket).list(path, {
-        "limit": limit,
-        "offset": offset,
-    })
+    response = client.storage.from_(bucket).list(
+        path,
+        {
+            "limit": limit,
+            "offset": offset,
+        },
+    )
     return response  # type: ignore[no-any-return]

@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 
 from backend.database import async_session_factory
@@ -255,17 +254,19 @@ class PortfolioService:
             total_cost += cost_basis
             total_value += market_value
 
-            holdings.append({
-                "ticker": ticker,
-                "name": asset["name"],
-                "quantity": qty,
-                "avg_cost": avg,
-                "current_price": current_price,
-                "market_value": round(market_value, 2),
-                "unrealized_pl": round(pl, 2),
-                "unrealized_pl_pct": round(pl_pct, 2),
-                "asset_type": asset["asset_type"],
-            })
+            holdings.append(
+                {
+                    "ticker": ticker,
+                    "name": asset["name"],
+                    "quantity": qty,
+                    "avg_cost": avg,
+                    "current_price": current_price,
+                    "market_value": round(market_value, 2),
+                    "unrealized_pl": round(pl, 2),
+                    "unrealized_pl_pct": round(pl_pct, 2),
+                    "asset_type": asset["asset_type"],
+                }
+            )
 
         total_pl = total_value - total_cost
         total_pl_pct = (total_pl / total_cost * 100) if total_cost else 0.0
@@ -284,9 +285,7 @@ class PortfolioService:
     # Internal
     # ------------------------------------------------------------------
 
-    async def _get_asset(
-        self, asset_id: str, user_id: str
-    ) -> dict[str, Any] | None:
+    async def _get_asset(self, asset_id: str, user_id: str) -> dict[str, Any] | None:
         async with async_session_factory() as session:
             result = await session.execute(
                 __import__("sqlalchemy").text(

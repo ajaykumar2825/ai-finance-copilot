@@ -112,19 +112,68 @@ class NewsService:
         ``score`` between -1.0 (very negative) and +1.0 (very positive).
         """
         positive_words = {
-            "gain", "gains", "gainful", "bullish", "profit", "profits",
-            "growth", "growing", "surge", "surges", "rally", "rallies",
-            "rise", "rises", "rising", "high", "higher", "up", "boom",
-            "outperform", "beat", "beats", "upgrade", "strong", "positive",
-            "optimistic", "record", "milestone", "recovery",
+            "gain",
+            "gains",
+            "gainful",
+            "bullish",
+            "profit",
+            "profits",
+            "growth",
+            "growing",
+            "surge",
+            "surges",
+            "rally",
+            "rallies",
+            "rise",
+            "rises",
+            "rising",
+            "high",
+            "higher",
+            "up",
+            "boom",
+            "outperform",
+            "beat",
+            "beats",
+            "upgrade",
+            "strong",
+            "positive",
+            "optimistic",
+            "record",
+            "milestone",
+            "recovery",
         }
         negative_words = {
-            "loss", "losses", "bearish", "decline", "declines", "drop",
-            "drops", "fall", "falls", "falling", "crash", "crashes", "low",
-            "lower", "down", "plunge", "plunges", "slump", "slumps",
-            "underperform", "miss", "misses", "downgrade", "weak",
-            "negative", "pessimistic", "recession", "debt", "bankruptcy",
-            "default", "sell-off",
+            "loss",
+            "losses",
+            "bearish",
+            "decline",
+            "declines",
+            "drop",
+            "drops",
+            "fall",
+            "falls",
+            "falling",
+            "crash",
+            "crashes",
+            "low",
+            "lower",
+            "down",
+            "plunge",
+            "plunges",
+            "slump",
+            "slumps",
+            "underperform",
+            "miss",
+            "misses",
+            "downgrade",
+            "weak",
+            "negative",
+            "pessimistic",
+            "recession",
+            "debt",
+            "bankruptcy",
+            "default",
+            "sell-off",
         }
 
         tokens = text.lower().split()
@@ -149,11 +198,10 @@ class NewsService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _fetch_from_yfinance(
-        self, query: str, limit: int
-    ) -> list[dict[str, Any]]:
-        import yfinance as yf
+    async def _fetch_from_yfinance(self, query: str, limit: int) -> list[dict[str, Any]]:
         import uuid
+
+        import yfinance as yf
 
         try:
             data = yf.Search(query, max_results=limit)
@@ -167,14 +215,16 @@ class NewsService:
             url = item.get("link", "")
             if not url:
                 continue
-            articles.append({
-                "id": str(uuid.uuid4()),
-                "title": item.get("title", ""),
-                "description": item.get("summary", ""),
-                "source": item.get("publisher", ""),
-                "url": url,
-                "published_at": item.get("providerPublishTime"),
-            })
+            articles.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": item.get("title", ""),
+                    "description": item.get("summary", ""),
+                    "source": item.get("publisher", ""),
+                    "url": url,
+                    "published_at": item.get("providerPublishTime"),
+                }
+            )
             if len(articles) >= limit:
                 break
 

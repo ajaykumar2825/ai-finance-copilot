@@ -140,4 +140,8 @@ blob-report/
 *.key
 *.cert
 *.crt
-.env.*
+# .env.example is tracked; only ignore secret files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

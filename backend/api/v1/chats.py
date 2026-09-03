@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -239,9 +239,7 @@ async def update_chat(
     )
 
     result = await db.execute(
-        text(
-            "SELECT id, title, is_pinned, created_at, updated_at FROM chats WHERE id = :cid"
-        ),
+        text("SELECT id, title, is_pinned, created_at, updated_at FROM chats WHERE id = :cid"),
         {"cid": chat_id},
     )
     row = result.fetchone()
@@ -264,7 +262,7 @@ async def delete_chat(
     chat_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_session),
-) -> None:
+) -> Response:
     """Permanently delete a chat and all associated messages."""
     user = await get_current_user(request, db)
     user_id = user.get("id", "")
@@ -288,6 +286,8 @@ async def delete_chat(
         text("DELETE FROM chats WHERE id = :cid AND user_id = :uid"),
         {"cid": chat_id, "uid": user_id},
     )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
@@ -407,9 +407,7 @@ async def send_message(
         {"cid": chat_id},
     )
     history_rows = history_result.fetchall()
-    conversation_history = [
-        {"role": row.role, "content": row.content} for row in history_rows
-    ]
+    conversation_history = [{"role": row.role, "content": row.content} for row in history_rows]
 
     # ---- stream the AI response via SSE ----
     async def event_generator():

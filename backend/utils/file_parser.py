@@ -31,12 +31,14 @@ def parse_pdf(
     # Build page-aware metadata
     page_metadata = []
     for idx, page_text in enumerate(pages):
-        page_metadata.append({
-            "page_number": idx + 1,
-            "text": page_text,
-            "start_char": sum(len(p) for p in pages[:idx]),
-            "end_char": sum(len(p) for p in pages[: idx + 1]),
-        })
+        page_metadata.append(
+            {
+                "page_number": idx + 1,
+                "text": page_text,
+                "start_char": sum(len(p) for p in pages[:idx]),
+                "end_char": sum(len(p) for p in pages[: idx + 1]),
+            }
+        )
 
     return {
         "text": full_text,
@@ -156,11 +158,7 @@ def parse_xlsx(
         parts.append(" | ".join(str(c) for c in df.columns))
         # Data rows
         for _, row in df.head(100).iterrows():
-            parts.append(
-                " | ".join(
-                    str(v) for v in row.values if v is not None and str(v) != "nan"
-                )
-            )
+            parts.append(" | ".join(str(v) for v in row.values if v is not None and str(v) != "nan"))
 
     full_text = "\n".join(parts)
 

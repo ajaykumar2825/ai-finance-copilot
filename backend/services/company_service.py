@@ -30,9 +30,7 @@ def _get_ticker(symbol: str) -> Any:
 class CompanyService:
     """Market data via yfinance."""
 
-    async def search_tickers(
-        self, query: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_tickers(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         try:
             results = yf.search(query)
             quotes = results.get("quotes", [])[:limit]
@@ -184,14 +182,16 @@ class CompanyService:
 
             records = []
             for date_idx, row in hist.iterrows():
-                records.append({
-                    "date": date_idx.strftime("%Y-%m-%d"),
-                    "open": round(float(row["Open"]), 4),
-                    "high": round(float(row["High"]), 4),
-                    "low": round(float(row["Low"]), 4),
-                    "close": round(float(row["Close"]), 4),
-                    "volume": int(row["Volume"]),
-                })
+                records.append(
+                    {
+                        "date": date_idx.strftime("%Y-%m-%d"),
+                        "open": round(float(row["Open"]), 4),
+                        "high": round(float(row["High"]), 4),
+                        "low": round(float(row["Low"]), 4),
+                        "close": round(float(row["Close"]), 4),
+                        "volume": int(row["Volume"]),
+                    }
+                )
 
             return {"symbol": symbol, "data": records}
         except Exception as exc:
