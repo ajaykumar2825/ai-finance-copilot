@@ -7,11 +7,18 @@ from pathlib import Path
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolve .env relative to *this file*, not the working directory, so the app
-# starts correctly from any CWD (dev, Docker, Render).
+# Resolve .env files relative to *this file*, not the working directory, so the
+# app starts correctly from any CWD (dev, Docker, Render/Railway).
+#
+# Both the project root and the backend package are checked. The backend .env
+# is loaded LAST so it wins for the app's runtime config (it holds the real
+# values in this repo), but a root-level .env is honoured too. Real environment
+# variables always take precedence over both dotenv files.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _BACKEND_DIR = Path(__file__).resolve().parent
 _ENV_FILE = _BACKEND_DIR / ".env"
 _ENV_EXAMPLE = _BACKEND_DIR / ".env.example"
+_ENV_FILES = [str(p) for p in (_PROJECT_ROOT / ".env", _ENV_FILE) if p.exists()]
 
 # The set of fields that must be present for the app to boot.
 _REQUIRED_FIELDS = (
@@ -26,7 +33,7 @@ _REQUIRED_FIELDS = (
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_ENV_FILE),
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -110,7 +117,8 @@ def _build_settings() -> Settings:
             "  Fix one of:",
             f"    1. Copy {_ENV_EXAMPLE}  ->  {_ENV_FILE}",
             "       and fill in real values.",
-            "    2. Export the variables in your shell / .env / CI secrets.",
+            "    2. Add the variables to the project-root .env",
+            "       (or export them in your shell / CI secrets).",
             "",
             "=" * 60,
             "",

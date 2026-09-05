@@ -3,12 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import jwt
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.config import settings
+from backend.services.auth_service import AuthService
 
 # Public paths that must NOT require a JWT. These are matched against the
 # full request path. Public auth endpoints (signup/signin/login/signout/refresh)
@@ -20,14 +19,12 @@ PUBLIC_AUTH = (
     "/api/v1/auth/signup",
     "/api/v1/auth/signin",
     "/api/v1/auth/login",
-    "/api/v1/auth/login/form",
     "/api/v1/auth/signout",
     "/api/v1/auth/logout",
     "/api/v1/auth/refresh",
     "/auth/signup",
     "/auth/signin",
     "/auth/login",
-    "/auth/login/form",
     "/auth/signout",
     "/auth/logout",
     "/auth/refresh",
@@ -38,6 +35,7 @@ UNAUTHENTICATED_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/api/v1/health",
     *PUBLIC_AUTH,
 }
 UNAUTHENTICATED_PREFIXES = (
@@ -45,11 +43,16 @@ UNAUTHENTICATED_PREFIXES = (
     "/docs",
     "/openapi",
     "/redoc",
+    "/api/v1/health",
     *PUBLIC_AUTH,
 )
 
 
 class SupabaseJWTMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: Any) -> None:
+        super().__init__(app)
+        self._auth_service = AuthService()
+
     async def dispatch(self, request: Request, call_next: Callable[..., Any]) -> Response:
         # Browsers issue CORS preflight OPTIONS requests before real requests.
         # Do NOT require auth for OPTIONS - pass through so CORSMiddleware can
@@ -72,17 +75,10 @@ class SupabaseJWTMiddleware(BaseHTTPMiddleware):
         token = auth_header.removeprefix("Bearer ").strip()
 
         try:
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET,
-                algorithms=["HS256"],
-                audience="authenticated",
-            )
-        except jwt.ExpiredSignatureError:
-            return JSONResponse(status_code=401, content={"detail": "Token has expired"})
-        except jwt.InvalidTokenError:
-            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
+            user = await self._auth_service.get_user(token)
+        except Exception:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
 
-        request.state.user = payload
-        request.state.user_id = payload.get("sub")
+        request.state.user = user
+        request.state.user_id = user.get("id")
         return await call_next(request)

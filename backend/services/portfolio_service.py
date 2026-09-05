@@ -105,7 +105,7 @@ class PortfolioService:
                 __import__("sqlalchemy").text(
                     f"""
                     UPDATE portfolio_assets
-                    SET {', '.join(set_clauses)}
+                    SET {", ".join(set_clauses)}
                     WHERE id = :asset_id AND user_id = :user_id
                     """
                 ),

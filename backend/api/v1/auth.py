@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
-import secrets
-import uuid
-from datetime import datetime, timedelta, timezone
+import logging
+import traceback
+from typing import Any
 
-import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import Response
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
-from backend.database import get_async_session
+from backend.services.auth_service import AuthService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-ACCESS_TOKEN_TTL = timedelta(hours=1)
-REFRESH_TOKEN_TTL = timedelta(days=30)
-_PBKDF2_ITERATIONS = 260_000
+_service = AuthService()
 
 
 # ---------------------------------------------------------------------------
@@ -56,93 +50,79 @@ class AuthResponse(BaseModel):
     user: User
 
 
+class SignupResponse(BaseModel):
+    access_token: str | None = None
+    refresh_token: str | None = None
+    user: User | None = None
+    needs_email_confirmation: bool = False
+    message: str | None = None
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
 
 # ---------------------------------------------------------------------------
-# Password helpers (PBKDF2-HMAC-SHA256, stored as pbkdf2$iter$salt$hash)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-def _hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), bytes.fromhex(salt), _PBKDF2_ITERATIONS
-    )
-    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt}${digest.hex()}"
-
-
-def _verify_password(password: str, stored: str) -> bool:
-    try:
-        algo, iterations, salt, expected = stored.split("$")
-        if algo != "pbkdf2_sha256":
-            return False
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), bytes.fromhex(salt), int(iterations)
-        )
-        return hmac.compare_digest(digest.hex(), expected)
-    except Exception:
-        return False
-
-
-# ---------------------------------------------------------------------------
-# JWT helpers (local, offline auth — no Supabase required)
-# ---------------------------------------------------------------------------
-
-
-def _issue_access_token(user_id: str, email: str, full_name: str | None) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "user_metadata": {"full_name": full_name or ""},
-        "aud": "authenticated",
-        "iat": now,
-        "exp": now + ACCESS_TOKEN_TTL,
-    }
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
-
-
-def _issue_refresh_token(user_id: str) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": user_id,
-        "aud": "refresh",
-        "iat": now,
-        "exp": now + REFRESH_TOKEN_TTL,
-    }
-    return jwt.encode(payload, settings.JWT_REFRESH_SECRET, algorithm="HS256")
-
-
-def _row_to_user(row) -> User:
+def _to_user(payload: dict[str, Any]) -> User:
+    created_at = payload.get("created_at", "") or ""
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
     return User(
-        id=str(row.id),
-        email=row.email,
-        fullName=getattr(row, "full_name", None),
-        avatarUrl=getattr(row, "avatar_url", None) or None,
-        subscriptionTier=getattr(row, "subscription_tier", None) or "free",
-        createdAt=row.created_at.isoformat() if getattr(row, "created_at", None) else "",
+        id=payload.get("id", ""),
+        email=str(payload.get("email", "") or ""),
+        fullName=payload.get("full_name"),
+        avatarUrl=payload.get("avatar_url") or None,
+        subscriptionTier="free",
+        createdAt=created_at,
     )
 
 
-def _auth_response(row) -> AuthResponse:
-    full_name = getattr(row, "full_name", None)
+def _auth_response(payload: dict[str, Any]) -> AuthResponse:
     return AuthResponse(
-        access_token=_issue_access_token(str(row.id), row.email, full_name),
-        refresh_token=_issue_refresh_token(str(row.id)),
-        user=_row_to_user(row),
+        access_token=payload["access_token"],
+        refresh_token=payload["refresh_token"],
+        user=_to_user(payload.get("user", {})),
     )
 
 
-async def _fetch_user_by_email(db: AsyncSession, email: str):
-    result = await db.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email.lower()})
-    return result.fetchone()
+def _map_auth_error(exc: Exception, *, login: bool = False, extra: str = "") -> HTTPException:
+    """Translate a Supabase/gotrue error into a FastAPI HTTPException.
 
+    Logs the full traceback and surfaces the actual error message instead of a
+    generic 500 whenever the details are known and safe to return.
+    """
+    logger.error("Supabase auth error (%s): %s", extra or "unknown", exc)
+    logger.error("Traceback:\n%s", traceback.format_exc())
 
-async def _fetch_user_by_id(db: AsyncSession, user_id: str):
-    result = await db.execute(text("SELECT * FROM users WHERE id = :uid"), {"uid": user_id})
-    return result.fetchone()
+    status_code = getattr(exc, "status", None)
+    message = str(getattr(exc, "message", "") or exc)
+
+    if login and (status_code == 400 or "invalid" in message.lower()):
+        return HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if "already been registered" in message or "already exists" in message.lower():
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists",
+        )
+
+    if "rate limit" in message.lower():
+        return HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=message,
+        )
+
+    if status_code is not None and isinstance(status_code, int):
+        return HTTPException(status_code=status_code, detail=message)
+
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
 
 
 # ---------------------------------------------------------------------------
@@ -150,125 +130,135 @@ async def _fetch_user_by_id(db: AsyncSession, user_id: str):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED, summary="Register a new user")
-async def signup(body: SignupRequest, db: AsyncSession = Depends(get_async_session)) -> AuthResponse:
-    """Register a new user with email + password (local DB, offline)."""
-    full_name = (body.full_name or body.fullName or "").strip() or None
+@router.post(
+    "/signup",
+    response_model=SignupResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+)
+async def signup(body: SignupRequest) -> SignupResponse:
+    """Register a new user with Supabase Auth.
+
+    Instrumented for diagnostics: logs the incoming email, whether the Supabase
+    client initialized, and the raw ``sign_up`` outcome. Returns the real error
+    message on failure instead of a generic 500.
+    """
     email = body.email.lower()
+    full_name = (body.full_name or body.fullName or "").strip() or ""
+    logger.info("signup attempt for email=%s full_name=%r", email, full_name)
 
-    existing = await _fetch_user_by_email(db, email)
-    if existing is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An account with this email already exists")
+    try:
+        from backend.services.supabase_client import get_async_client
 
-    user_id = str(uuid.uuid4())
-    pw_hash = _hash_password(body.password)
-    await db.execute(
-        text(
-            """
-            INSERT INTO users (id, email, full_name, password_hash, subscription_tier, settings, created_at, updated_at)
-            VALUES (:id, :email, :name, :pw, 'free', '{}'::json, NOW(), NOW())
-            """
-        ),
-        {"id": user_id, "email": email, "name": full_name, "pw": pw_hash},
+        await get_async_client()
+        logger.info("Supabase client initialized for email=%s (url=%s)", email, settings.SUPABASE_URL)
+    except Exception as exc:
+        logger.error("Supabase client failed to initialize for email=%s", email, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Supabase client initialization failed: {exc}",
+        )
+
+    try:
+        payload = await _service.signup(email, body.password, full_name)
+        logger.info(
+            "signup response for email=%s needs_email_confirmation=%s user_id=%s",
+            email,
+            payload.get("needs_email_confirmation"),
+            payload.get("user", {}).get("id"),
+        )
+    except Exception as exc:
+        logger.error("signup call failed for email=%s", email, exc_info=True)
+        raise _map_auth_error(exc, extra=f"signup:{email}")
+
+    if payload.get("needs_email_confirmation"):
+        return SignupResponse(
+            access_token=None,
+            refresh_token=None,
+            user=_to_user(payload.get("user", {})) if payload.get("user") else None,
+            needs_email_confirmation=True,
+            message="Account created. Please confirm your email before signing in.",
+        )
+
+    user = _to_user(payload.get("user", {}))
+    return SignupResponse(
+        access_token=payload.get("access_token"),
+        refresh_token=payload.get("refresh_token"),
+        user=user,
+        needs_email_confirmation=False,
+        message=None,
     )
-    await db.commit()
-
-    row = await _fetch_user_by_id(db, user_id)
-    return _auth_response(row)
 
 
 @router.post("/signin", response_model=AuthResponse, summary="Authenticate and obtain JWT tokens")
-async def signin(body: LoginRequest, db: AsyncSession = Depends(get_async_session)) -> AuthResponse:
+async def signin(body: LoginRequest) -> AuthResponse:
     """Frontend-facing login endpoint (path + shape match the frontend)."""
-    return await _login(body, db)
+    return await _login(body)
 
 
 @router.post("/login", response_model=AuthResponse, summary="Authenticate and obtain JWT tokens")
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_async_session)) -> AuthResponse:
+async def login(body: LoginRequest) -> AuthResponse:
     """Authenticate with email + password (alias used by Swagger/legacy callers)."""
-    return await _login(body, db)
+    return await _login(body)
 
 
-async def _login(body: LoginRequest, db: AsyncSession) -> AuthResponse:
-    row = await _fetch_user_by_email(db, body.email.lower())
-    if row is None or not _verify_password(body.password, row.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    return _auth_response(row)
-
-
-@router.post(
-    "/login/form",
-    response_model=AuthResponse,
-    summary="Authenticate via OAuth2 form (for Swagger UI)",
-    include_in_schema=False,
-)
-async def login_form(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_async_session),
-) -> AuthResponse:
-    row = await _fetch_user_by_email(db, form_data.username.lower())
-    if row is None or not _verify_password(form_data.password, row.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    return _auth_response(row)
+async def _login(body: LoginRequest) -> AuthResponse:
+    try:
+        payload = await _service.login(body.email.lower(), body.password)
+    except Exception as exc:
+        raise _map_auth_error(exc, login=True)
+    return _auth_response(payload)
 
 
 @router.post("/signout", status_code=status.HTTP_204_NO_CONTENT, summary="Sign out")
-async def signout() -> Response:
-    """Frontend-facing logout endpoint. Stateless JWT — no server state to clear."""
+async def signout(request: Request) -> Response:
+    """Sign the current user out of Supabase (revokes the refresh token)."""
+    try:
+        await _service.logout()
+    except Exception:
+        # Logout is best-effort; the client clears local state regardless.
+        pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Sign out")
-async def logout() -> Response:
+async def logout(request: Request) -> Response:
     """Alias of signout (legacy callers)."""
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await signout(request)
 
 
 @router.post("/refresh", response_model=AuthResponse, summary="Refresh an expired access token")
-async def refresh_token(
-    body: RefreshRequest,
-    db: AsyncSession = Depends(get_async_session),
-) -> AuthResponse:
-    """Exchange a valid refresh token for a new access + refresh token pair (offline)."""
+async def refresh_token(body: RefreshRequest) -> AuthResponse:
+    """Exchange a valid refresh token for a new access + refresh token pair."""
     try:
-        payload = jwt.decode(
-            body.refresh_token,
-            settings.JWT_REFRESH_SECRET,
-            algorithms=["HS256"],
-            audience="refresh",
+        payload = await _service.refresh_token(body.refresh_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=getattr(exc, "message", "Invalid refresh token"),
         )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-
-    row = await _fetch_user_by_id(db, payload.get("sub"))
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
-    return _auth_response(row)
+    return _auth_response(payload)
 
 
 @router.get("/profile", response_model=User, summary="Get the current authenticated user")
-async def get_profile(
-    request: Request,
-    db: AsyncSession = Depends(get_async_session),
-) -> User:
+async def get_profile(request: Request) -> User:
     """Return the profile of the currently authenticated user (camelCase, frontend contract)."""
-    from backend.dependencies import get_current_user
+    token = _extract_bearer(request)
+    try:
+        payload = await _service.get_user(token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    return _to_user(payload)
 
-    current_user = await get_current_user(request, db)
-    user_id = current_user.get("id", "")
 
-    row = await _fetch_user_by_id(db, user_id)
-    if row is not None:
-        return _row_to_user(row)
-
-    meta = current_user.get("user_metadata", {}) if isinstance(current_user, dict) else {}
-    return User(
-        id=user_id,
-        email=current_user.get("email", ""),
-        fullName=meta.get("full_name") or meta.get("fullName"),
-        avatarUrl=meta.get("avatar_url") or meta.get("avatarUrl"),
-        subscriptionTier="free",
-        createdAt="",
-    )
+def _extract_bearer(request: Request) -> str:
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Authorization header",
+        )
+    return header.removeprefix("Bearer ").strip()

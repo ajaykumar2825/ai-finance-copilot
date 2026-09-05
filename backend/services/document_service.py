@@ -42,7 +42,7 @@ class DocumentService:
         content_type: str,
     ) -> dict[str, Any]:
         if content_type not in self.ALLOWED_TYPES:
-            raise ValueError(f"Unsupported file type: {content_type}. " f"Allowed: {', '.join(self.ALLOWED_TYPES)}")
+            raise ValueError(f"Unsupported file type: {content_type}. Allowed: {', '.join(self.ALLOWED_TYPES)}")
 
         doc_id = str(uuid.uuid4())
         ext = self.EXTENSION_MAP.get(content_type, "bin")

@@ -108,7 +108,7 @@ class ChatService:
                 __import__("sqlalchemy").text(
                     f"""
                     UPDATE chats
-                    SET {', '.join(updates)}
+                    SET {", ".join(updates)}
                     WHERE id = :chat_id AND user_id = :user_id
                     """
                 ),

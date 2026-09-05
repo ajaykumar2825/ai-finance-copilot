@@ -22,7 +22,7 @@ def validate_file_type(
     """Raise ``ValueError`` if the MIME type is not allowed."""
     allowed = allowed_types or set(ALLOWED_FILE_TYPES.keys())
     if content_type not in allowed:
-        raise ValueError(f"Unsupported file type '{content_type}'. " f"Allowed: {', '.join(sorted(allowed))}")
+        raise ValueError(f"Unsupported file type '{content_type}'. Allowed: {', '.join(sorted(allowed))}")
 
 
 def validate_file_size(
@@ -35,7 +35,7 @@ def validate_file_size(
         raise ValueError("File is empty.")
     if size_bytes > limit:
         raise ValueError(
-            f"File too large: {size_bytes} bytes. Max allowed: {limit} bytes " f"({limit // (1024 * 1024)} MB)."
+            f"File too large: {size_bytes} bytes. Max allowed: {limit} bytes ({limit // (1024 * 1024)} MB)."
         )
 
 

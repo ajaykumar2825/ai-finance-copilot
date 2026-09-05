@@ -79,7 +79,7 @@ def _validate_file(file: UploadFile) -> None:
     if ext not in ALLOWED_EXTENSIONS and content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(f"File type not allowed. " f"Supported types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"),
+            detail=(f"File type not allowed. Supported types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"),
         )
 
 

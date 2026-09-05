@@ -465,9 +465,7 @@ async def portfolio_summary(
 
     try:
         result = await db.execute(
-            text(
-                "SELECT ticker, name, quantity, avg_cost, sector FROM portfolio_assets WHERE user_id = :uid"
-            ),
+            text("SELECT ticker, name, quantity, avg_cost, sector FROM portfolio_assets WHERE user_id = :uid"),
             {"uid": user_id},
         )
         rows = result.fetchall()

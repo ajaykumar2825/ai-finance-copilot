@@ -1,12 +1,20 @@
 import asyncio
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
+from backend.models.base import Base
+from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-from models.base import Base
+
+# Load the same .env files the app uses so migrations work without manually
+# exporting DATABASE_URL. Real environment variables still take precedence.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_PROJECT_ROOT / ".env", override=False)
+load_dotenv(_PROJECT_ROOT / "backend" / ".env", override=False)
 
 config = context.config
 if config.config_file_name is not None:

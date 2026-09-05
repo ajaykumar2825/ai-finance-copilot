@@ -35,7 +35,7 @@ def get_llm() -> BaseChatModel:
     elif provider == "anthropic":
         _llm_instance = _create_anthropic_llm(model)
     else:
-        raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. " "Supported: openai, gemini, anthropic")
+        raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Supported: openai, gemini, anthropic")
 
     logger.info("LLM initialised: provider=%s model=%s", provider, model)
     return _llm_instance

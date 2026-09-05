@@ -74,7 +74,7 @@ class CitationGenerator:
                 lines.append(f"[{ref}] {filename}{page_str}: {preview}")
             elif style == "footnote":
                 page_str = f" (page {page})" if page else ""
-                lines.append(f"[{ref}] {filename}{page_str}. " f"Available in uploaded document.")
+                lines.append(f"[{ref}] {filename}{page_str}. Available in uploaded document.")
             elif style == "academic":
                 page_str = f", p.{page}" if page else ""
                 lines.append(f"({filename}{page_str})")
